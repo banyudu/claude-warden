@@ -1,144 +1,152 @@
 "use strict";
+var __create = Object.create;
+var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __getProtoOf = Object.getPrototypeOf;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __copyProps = (to, from, except, desc) => {
+  if (from && typeof from === "object" || typeof from === "function") {
+    for (let key of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(to, key) && key !== except)
+        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+  }
+  return to;
+};
+var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
+  // If the importer is in node compatibility mode or this is not an ESM
+  // file that has been converted to a CommonJS file using a Babel-
+  // compatible transform (i.e. "__esModule" has not been set), then set
+  // "default" to the CommonJS "module.exports" for node compatibility.
+  isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
+  mod
+));
 
 // src/parser.ts
-var import_shell_quote = require("shell-quote");
+var import_bash_parser = __toESM(require("bash-parser"), 1);
 var import_path = require("path");
-var ENV_PREFIX_REGEX = /^[A-Za-z_][A-Za-z0-9_]*=/;
-var SUBSHELL_REGEX = /\$\(|`/;
-var HEREDOC_REGEX = /<<-?\s*['"]?\w+['"]?/;
-function splitOnOperators(input) {
-  const segments = [];
-  let current = "";
-  let inSingle = false;
-  let inDouble = false;
-  let escaped = false;
-  let i = 0;
-  while (i < input.length) {
-    const ch = input[i];
-    if (escaped) {
-      current += ch;
-      escaped = false;
-      i++;
-      continue;
-    }
-    if (ch === "\\" && !inSingle) {
-      escaped = true;
-      current += ch;
-      i++;
-      continue;
-    }
-    if (ch === "'" && !inDouble) {
-      inSingle = !inSingle;
-      current += ch;
-      i++;
-      continue;
-    }
-    if (ch === '"' && !inSingle) {
-      inDouble = !inDouble;
-      current += ch;
-      i++;
-      continue;
-    }
-    if (!inSingle && !inDouble) {
-      const two = input.slice(i, i + 2);
-      if (two === "&&" || two === "||" || two === "|&") {
-        segments.push(current);
-        current = "";
-        i += 2;
-        continue;
-      }
-      if (ch === "|" || ch === ";") {
-        segments.push(current);
-        current = "";
-        i++;
-        continue;
+function convertCommand(node) {
+  if (!node.name) return null;
+  const command = node.name.text.includes("/") ? (0, import_path.basename)(node.name.text) : node.name.text;
+  const envPrefixes = [];
+  if (node.prefix) {
+    for (const p of node.prefix) {
+      if (p.type === "AssignmentWord") {
+        envPrefixes.push(p.text);
       }
     }
-    current += ch;
-    i++;
   }
-  if (current.trim()) segments.push(current);
-  return segments;
+  const args = [];
+  if (node.suffix) {
+    for (const s of node.suffix) {
+      if (s.type === "Word") {
+        args.push(s.text);
+      }
+    }
+  }
+  const rawParts = [
+    ...envPrefixes,
+    node.name.text,
+    ...args
+  ];
+  const raw = rawParts.join(" ");
+  return { command, args, envPrefixes, raw };
 }
-function parseSegment(raw) {
-  const trimmed = raw.trim();
-  if (!trimmed) return null;
-  try {
-    const tokens = (0, import_shell_quote.parse)(trimmed);
-    const stringTokens = [];
-    for (const token of tokens) {
-      if (typeof token === "string") {
-        stringTokens.push(token);
+function hasCommandExpansion(node) {
+  if (node.type === "CommandExpansion") return true;
+  if (node.type === "Command") {
+    const cmd = node;
+    if (cmd.suffix) {
+      for (const s of cmd.suffix) {
+        if (s.type === "Word" && s.expansion) {
+          for (const exp of s.expansion) {
+            if (exp.type === "CommandExpansion") return true;
+          }
+        }
       }
     }
-    const envPrefixes = [];
-    let commandStart = 0;
-    for (let i = 0; i < stringTokens.length; i++) {
-      if (ENV_PREFIX_REGEX.test(stringTokens[i])) {
-        envPrefixes.push(stringTokens[i]);
-        commandStart = i + 1;
+    if (cmd.name?.expansion) {
+      for (const exp of cmd.name.expansion) {
+        if (exp.type === "CommandExpansion") return true;
+      }
+    }
+  }
+  return false;
+}
+function walkNode(node, result) {
+  switch (node.type) {
+    case "Command": {
+      const cmd = node;
+      if (hasCommandExpansion(node)) {
+        result.hasSubshell = true;
+      }
+      const parsed = convertCommand(cmd);
+      if (!parsed) break;
+      if ((parsed.command === "sh" || parsed.command === "bash" || parsed.command === "zsh") && parsed.args.length >= 2 && parsed.args[0] === "-c") {
+        const innerResult = parseCommand(parsed.args[1]);
+        if (innerResult.parseError) {
+          result.commands.push(parsed);
+        } else {
+          result.commands.push(...innerResult.commands);
+          if (innerResult.hasSubshell) {
+            result.hasSubshell = true;
+          }
+        }
       } else {
-        break;
+        result.commands.push(parsed);
       }
+      break;
     }
-    const remaining = stringTokens.slice(commandStart);
-    if (remaining.length === 0) return null;
-    let command = remaining[0];
-    if (command.includes("/")) {
-      command = (0, import_path.basename)(command);
+    case "Pipeline": {
+      const pipeline = node;
+      for (const cmd of pipeline.commands) {
+        walkNode(cmd, result);
+      }
+      break;
     }
-    return {
-      command,
-      args: remaining.slice(1),
-      envPrefixes,
-      raw: trimmed
-    };
-  } catch {
-    return null;
+    case "LogicalExpression": {
+      const logical = node;
+      walkNode(logical.left, result);
+      walkNode(logical.right, result);
+      break;
+    }
+    case "Subshell": {
+      result.hasSubshell = true;
+      const subshell = node;
+      if (subshell.list?.commands) {
+        for (const cmd of subshell.list.commands) {
+          walkNode(cmd, result);
+        }
+      }
+      break;
+    }
+    // Complex constructs — flag as subshell for safety
+    case "If":
+    case "For":
+    case "While":
+    case "Until":
+    case "Case":
+    case "Function":
+      result.hasSubshell = true;
+      break;
+    default:
+      break;
   }
 }
 function parseCommand(input) {
   if (!input || !input.trim()) {
     return { commands: [], hasSubshell: false, parseError: false };
   }
-  const hasSubshell = SUBSHELL_REGEX.test(input);
-  const hasHeredoc = HEREDOC_REGEX.test(input);
-  if (hasHeredoc) {
-    const firstLine = input.split("\n")[0];
-    const segments2 = splitOnOperators(firstLine.split("<<")[0]);
-    const commands2 = [];
-    for (const seg of segments2) {
-      const parsed = parseSegment(seg);
-      if (parsed) commands2.push(parsed);
+  try {
+    const ast = (0, import_bash_parser.default)(input);
+    const result = { commands: [], hasSubshell: false };
+    for (const cmd of ast.commands) {
+      walkNode(cmd, result);
     }
-    if (commands2.length > 0) {
-      return { commands: commands2, hasSubshell: true, parseError: false };
-    }
-    return { commands: [], hasSubshell: true, parseError: true };
+    return { commands: result.commands, hasSubshell: result.hasSubshell, parseError: false };
+  } catch {
+    return { commands: [], hasSubshell: false, parseError: true };
   }
-  const segments = splitOnOperators(input);
-  const commands = [];
-  let parseError = false;
-  for (const segment of segments) {
-    const parsed = parseSegment(segment);
-    if (parsed) {
-      if ((parsed.command === "sh" || parsed.command === "bash" || parsed.command === "zsh") && parsed.args.length >= 2 && parsed.args[0] === "-c") {
-        const innerCommand = parsed.args[1];
-        const innerResult = parseCommand(innerCommand);
-        if (innerResult.parseError) {
-          parseError = true;
-        } else {
-          commands.push(...innerResult.commands);
-          if (innerResult.hasSubshell) {
-            return { commands: [...commands, ...innerResult.commands], hasSubshell: true, parseError };
-          }
-        }
-      } else {
-        commands.push(parsed);
-      }
-    }
-  }
-  return { commands, hasSubshell, parseError };
 }
 
 // src/evaluator.ts

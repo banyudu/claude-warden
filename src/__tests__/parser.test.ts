@@ -115,7 +115,7 @@ describe('parseCommand', () => {
 
   it('handles heredocs by extracting base command', () => {
     const result = parseCommand('cat <<EOF\nhello\nEOF');
-    expect(result.hasSubshell).toBe(true); // treated as complex
+    // bash-parser handles heredocs natively — no longer needs hasSubshell hack
     expect(result.commands.length).toBeGreaterThanOrEqual(1);
     expect(result.commands[0].command).toBe('cat');
   });
@@ -126,5 +126,30 @@ describe('parseCommand', () => {
     expect(result.commands[0].command).toBe('npx');
     expect(result.commands[0].args).toContain('jest');
     expect(result.commands[1].command).toBe('echo');
+  });
+
+  it('handles nested subshells', () => {
+    const result = parseCommand('(echo hello; (echo nested))');
+    expect(result.hasSubshell).toBe(true);
+  });
+
+  it('detects command substitution in double quotes', () => {
+    const result = parseCommand('echo "today is $(date)"');
+    expect(result.hasSubshell).toBe(true);
+    expect(result.commands[0].command).toBe('echo');
+  });
+
+  it('handles mixed pipes and logical operators', () => {
+    const result = parseCommand('cat file | sort && echo done || echo fail');
+    expect(result.commands).toHaveLength(4);
+    expect(result.commands[0].command).toBe('cat');
+    expect(result.commands[1].command).toBe('sort');
+    expect(result.commands[2].command).toBe('echo');
+    expect(result.commands[3].command).toBe('echo');
+  });
+
+  it('returns parseError for invalid syntax', () => {
+    const result = parseCommand('if then else fi ;;; <<<');
+    expect(result.parseError).toBe(true);
   });
 });

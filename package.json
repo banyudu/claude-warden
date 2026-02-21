@@ -13,12 +13,11 @@
     "eval": "node dist/index.cjs"
   },
   "dependencies": {
-    "shell-quote": "^1.8.3",
+    "bash-parser": "^0.5.0",
     "yaml": "^2.4.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
-    "@types/shell-quote": "^1.7.5",
     "tsup": "^8.0.0",
     "typescript": "^5.4.0",
     "vitest": "^1.6.0"
