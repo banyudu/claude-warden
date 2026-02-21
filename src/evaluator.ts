@@ -66,10 +66,22 @@ function evaluateCommand(cmd: ParsedCommand, config: WardenConfig): CommandEvalD
     return { command, args, decision: 'allow', reason: `"${command}" is safe`, matchedRule: 'alwaysAllow' };
   }
 
-  // 4. SSH host whitelisting with recursive remote command evaluation
+  // 4. Remote target whitelisting with recursive command evaluation
   if ((command === 'ssh' || command === 'scp' || command === 'rsync') && config.trustedSSHHosts?.length) {
     const sshResult = evaluateSSHCommand(cmd, config);
     if (sshResult) return sshResult;
+  }
+  if (command === 'docker' && config.trustedDockerContainers?.length) {
+    const dockerResult = evaluateDockerExec(cmd, config);
+    if (dockerResult) return dockerResult;
+  }
+  if (command === 'kubectl' && config.trustedKubectlContexts?.length) {
+    const kubectlResult = evaluateKubectlExec(cmd, config);
+    if (kubectlResult) return kubectlResult;
+  }
+  if (command === 'sprite' && config.trustedSprites?.length) {
+    const spriteResult = evaluateSpriteExec(cmd, config);
+    if (spriteResult) return spriteResult;
   }
 
   // 5. Command-specific rules
@@ -140,8 +152,8 @@ function globToRegex(pattern: string): RegExp {
   return new RegExp(`^${escaped}$`);
 }
 
-function matchesHost(host: string, patterns: string[]): boolean {
-  return patterns.some(p => globToRegex(p).test(host));
+function matchesPattern(value: string, patterns: string[]): boolean {
+  return patterns.some(p => globToRegex(p).test(value));
 }
 
 interface SSHParseResult {
@@ -199,7 +211,7 @@ function evaluateSSHCommand(cmd: ParsedCommand, config: WardenConfig): CommandEv
 
   if (command === 'scp' || command === 'rsync') {
     const host = extractHostFromRemotePath(args);
-    if (host && matchesHost(host, trustedHosts)) {
+    if (host && matchesPattern(host, trustedHosts)) {
       return {
         command, args,
         decision: 'allow',
@@ -212,7 +224,7 @@ function evaluateSSHCommand(cmd: ParsedCommand, config: WardenConfig): CommandEv
 
   // ssh
   const { host, remoteCommand } = parseSSHArgs(args);
-  if (!host || !matchesHost(host, trustedHosts)) return null;
+  if (!host || !matchesPattern(host, trustedHosts)) return null;
 
   // Trusted host, no remote command
   if (!remoteCommand) {
@@ -232,5 +244,256 @@ function evaluateSSHCommand(cmd: ParsedCommand, config: WardenConfig): CommandEv
     decision: result.decision,
     reason: `Trusted SSH host "${host}": ${result.reason}`,
     matchedRule: 'trustedSSHHosts',
+  };
+}
+
+// ─── Docker exec whitelisting ───
+
+/** docker exec flags that consume the next argument. */
+const DOCKER_EXEC_FLAGS_WITH_VALUE = new Set([
+  '-e', '--env', '--env-file', '-u', '--user', '-w', '--workdir', '--detach-keys',
+]);
+
+interface ExecParseResult {
+  target: string | null;
+  remoteCommand: string | null;
+}
+
+function parseDockerExecArgs(args: string[]): ExecParseResult {
+  let target: string | null = null;
+  const remoteArgs: string[] = [];
+  let i = 0;
+
+  while (i < args.length) {
+    const arg = args[i];
+    if (DOCKER_EXEC_FLAGS_WITH_VALUE.has(arg)) {
+      i += 2;
+      continue;
+    }
+    if (arg.startsWith('-')) {
+      i++;
+      continue;
+    }
+    if (!target) {
+      target = arg;
+      i++;
+      while (i < args.length) {
+        remoteArgs.push(args[i]);
+        i++;
+      }
+      break;
+    }
+    i++;
+  }
+
+  return { target, remoteCommand: remoteArgs.length > 0 ? remoteArgs.join(' ') : null };
+}
+
+function evaluateDockerExec(cmd: ParsedCommand, config: WardenConfig): CommandEvalDetail | null {
+  const { command, args } = cmd;
+  if (args[0] !== 'exec') return null;
+
+  const { target, remoteCommand } = parseDockerExecArgs(args.slice(1));
+  if (!target || !matchesPattern(target, config.trustedDockerContainers || [])) return null;
+
+  if (!remoteCommand) {
+    return {
+      command, args,
+      decision: 'allow',
+      reason: `Trusted Docker container "${target}" (interactive)`,
+      matchedRule: 'trustedDockerContainers',
+    };
+  }
+
+  const parsed = parseCommand(remoteCommand);
+  const result = evaluate(parsed, config);
+  return {
+    command, args,
+    decision: result.decision,
+    reason: `Trusted Docker container "${target}": ${result.reason}`,
+    matchedRule: 'trustedDockerContainers',
+  };
+}
+
+// ─── kubectl exec whitelisting ───
+
+/** kubectl flags that consume the next argument (relevant to exec). */
+const KUBECTL_FLAGS_WITH_VALUE = new Set([
+  '-n', '--namespace', '-c', '--container', '--context', '--cluster',
+  '--kubeconfig', '-s', '--server', '--token', '--user', '--as',
+  '--as-group', '--certificate-authority', '--client-certificate',
+  '--client-key', '-l', '--selector', '-f', '--filename',
+  '--cache-dir', '--request-timeout', '-o', '--output',
+]);
+
+function parseKubectlExecArgs(args: string[]): { context: string | null; pod: string | null; remoteCommand: string | null } {
+  let context: string | null = null;
+  let pod: string | null = null;
+  const remoteArgs: string[] = [];
+  let i = 0;
+  let pastSeparator = false;
+
+  while (i < args.length) {
+    const arg = args[i];
+
+    if (arg === '--') {
+      pastSeparator = true;
+      i++;
+      while (i < args.length) {
+        remoteArgs.push(args[i]);
+        i++;
+      }
+      break;
+    }
+
+    // Handle --flag=value syntax
+    if (arg.startsWith('--') && arg.includes('=')) {
+      if (arg.startsWith('--context=')) {
+        context = arg.split('=')[1];
+      }
+      i++;
+      continue;
+    }
+
+    if (KUBECTL_FLAGS_WITH_VALUE.has(arg)) {
+      if (arg === '--context') context = args[i + 1] || null;
+      i += 2;
+      continue;
+    }
+    if (arg.startsWith('-')) {
+      i++;
+      continue;
+    }
+    // First positional arg is the pod
+    if (!pod) {
+      pod = arg;
+    }
+    i++;
+  }
+
+  return { context, pod, remoteCommand: remoteArgs.length > 0 ? remoteArgs.join(' ') : null };
+}
+
+function evaluateKubectlExec(cmd: ParsedCommand, config: WardenConfig): CommandEvalDetail | null {
+  const { command, args } = cmd;
+  if (args[0] !== 'exec') return null;
+
+  const { context, pod, remoteCommand } = parseKubectlExecArgs(args.slice(1));
+  const trustedContexts = config.trustedKubectlContexts || [];
+
+  // Must have a context (explicit or matched) to whitelist
+  if (!context || !matchesPattern(context, trustedContexts)) return null;
+
+  if (!remoteCommand) {
+    return {
+      command, args,
+      decision: 'allow',
+      reason: `Trusted kubectl context "${context}"${pod ? `, pod "${pod}"` : ''} (interactive)`,
+      matchedRule: 'trustedKubectlContexts',
+    };
+  }
+
+  const parsed = parseCommand(remoteCommand);
+  const result = evaluate(parsed, config);
+  return {
+    command, args,
+    decision: result.decision,
+    reason: `Trusted kubectl context "${context}": ${result.reason}`,
+    matchedRule: 'trustedKubectlContexts',
+  };
+}
+
+// ─── Sprite exec whitelisting ───
+
+/** sprite global flags that consume the next argument. */
+const SPRITE_FLAGS_WITH_VALUE = new Set([
+  '-o', '--org', '-s', '--sprite',
+]);
+
+function parseSpriteExecArgs(args: string[]): { spriteName: string | null; remoteCommand: string | null } {
+  let spriteName: string | null = null;
+  const remoteArgs: string[] = [];
+  let foundExec = false;
+  let i = 0;
+
+  while (i < args.length) {
+    const arg = args[i];
+
+    // Handle --flag=value syntax
+    if (arg.startsWith('--') && arg.includes('=')) {
+      if (arg.startsWith('--sprite=')) {
+        spriteName = arg.split('=')[1];
+      }
+      i++;
+      continue;
+    }
+
+    if (SPRITE_FLAGS_WITH_VALUE.has(arg)) {
+      if (arg === '-s' || arg === '--sprite') {
+        spriteName = args[i + 1] || null;
+      }
+      i += 2;
+      continue;
+    }
+
+    if (arg === '--debug') {
+      // --debug or --debug=<file>
+      i++;
+      continue;
+    }
+
+    if (arg.startsWith('-')) {
+      i++;
+      continue;
+    }
+
+    // Look for "exec", "x", "console", or "c" subcommand
+    if (!foundExec) {
+      if (arg === 'exec' || arg === 'x' || arg === 'console' || arg === 'c') {
+        foundExec = true;
+        i++;
+        continue;
+      }
+      // Unknown positional before subcommand — bail
+      return { spriteName: null, remoteCommand: null };
+    }
+
+    // After exec subcommand, remaining args are the remote command
+    while (i < args.length) {
+      remoteArgs.push(args[i]);
+      i++;
+    }
+    break;
+  }
+
+  return {
+    spriteName,
+    remoteCommand: remoteArgs.length > 0 ? remoteArgs.join(' ') : null,
+  };
+}
+
+function evaluateSpriteExec(cmd: ParsedCommand, config: WardenConfig): CommandEvalDetail | null {
+  const { command, args } = cmd;
+  const { spriteName, remoteCommand } = parseSpriteExecArgs(args);
+  const trustedSprites = config.trustedSprites || [];
+
+  if (!spriteName || !matchesPattern(spriteName, trustedSprites)) return null;
+
+  if (!remoteCommand) {
+    return {
+      command, args,
+      decision: 'allow',
+      reason: `Trusted sprite "${spriteName}" (interactive)`,
+      matchedRule: 'trustedSprites',
+    };
+  }
+
+  const parsed = parseCommand(remoteCommand);
+  const result = evaluate(parsed, config);
+  return {
+    command, args,
+    decision: result.decision,
+    reason: `Trusted sprite "${spriteName}": ${result.reason}`,
+    matchedRule: 'trustedSprites',
   };
 }

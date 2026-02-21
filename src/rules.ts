@@ -65,6 +65,15 @@ function mergeConfig(base: WardenConfig, override: Partial<WardenConfig>): void 
   if (override.trustedSSHHosts) {
     base.trustedSSHHosts = [...(base.trustedSSHHosts || []), ...override.trustedSSHHosts];
   }
+  if (override.trustedDockerContainers) {
+    base.trustedDockerContainers = [...(base.trustedDockerContainers || []), ...override.trustedDockerContainers];
+  }
+  if (override.trustedKubectlContexts) {
+    base.trustedKubectlContexts = [...(base.trustedKubectlContexts || []), ...override.trustedKubectlContexts];
+  }
+  if (override.trustedSprites) {
+    base.trustedSprites = [...(base.trustedSprites || []), ...override.trustedSprites];
+  }
   if (override.defaultDecision) {
     base.defaultDecision = override.defaultDecision;
   }

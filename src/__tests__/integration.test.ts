@@ -10,9 +10,13 @@ function warden(command: string) {
   return evaluate(parsed, DEFAULT_CONFIG);
 }
 
-function wardenWithSSH(command: string, trustedHosts: string[]) {
-  const config: WardenConfig = { ...structuredClone(DEFAULT_CONFIG), trustedSSHHosts: trustedHosts };
+function wardenWith(command: string, overrides: Partial<WardenConfig>) {
+  const config: WardenConfig = { ...structuredClone(DEFAULT_CONFIG), ...overrides };
   return evaluate(parseCommand(command), config);
+}
+
+function wardenWithSSH(command: string, trustedHosts: string[]) {
+  return wardenWith(command, { trustedSSHHosts: trustedHosts });
 }
 
 describe('integration: realistic commands', () => {
@@ -229,6 +233,82 @@ describe('integration: realistic commands', () => {
 
     it('git reset --hard HEAD~1 → ask', () => {
       expect(warden('git reset --hard HEAD~1').decision).toBe('ask');
+    });
+  });
+
+  describe('Docker container whitelisting end-to-end', () => {
+    const containers = ['my-app', 'dev-*'];
+
+    it('docker exec my-app cat /etc/hosts → allow', () => {
+      expect(wardenWith('docker exec my-app cat /etc/hosts', { trustedDockerContainers: containers }).decision).toBe('allow');
+    });
+
+    it('docker exec -it my-app → allow (interactive)', () => {
+      expect(wardenWith('docker exec -it my-app', { trustedDockerContainers: containers }).decision).toBe('allow');
+    });
+
+    it('docker exec my-app sudo rm -rf / → deny', () => {
+      expect(wardenWith('docker exec my-app sudo rm -rf /', { trustedDockerContainers: containers }).decision).toBe('deny');
+    });
+
+    it('docker exec unknown-app ls → ask', () => {
+      expect(wardenWith('docker exec unknown-app ls', { trustedDockerContainers: containers }).decision).toBe('ask');
+    });
+
+    it('docker exec dev-web npm start → allow (glob)', () => {
+      expect(wardenWith('docker exec dev-web npm start', { trustedDockerContainers: containers }).decision).toBe('allow');
+    });
+  });
+
+  describe('kubectl context whitelisting end-to-end', () => {
+    const contexts = ['minikube', 'dev-*'];
+
+    it('kubectl exec --context minikube pod -- cat /tmp/log → allow', () => {
+      expect(wardenWith('kubectl exec --context minikube pod -- cat /tmp/log', { trustedKubectlContexts: contexts }).decision).toBe('allow');
+    });
+
+    it('kubectl exec --context minikube -it pod → allow (interactive)', () => {
+      expect(wardenWith('kubectl exec --context minikube -it pod', { trustedKubectlContexts: contexts }).decision).toBe('allow');
+    });
+
+    it('kubectl exec --context minikube pod -- sudo rm -rf / → deny', () => {
+      expect(wardenWith('kubectl exec --context minikube pod -- sudo rm -rf /', { trustedKubectlContexts: contexts }).decision).toBe('deny');
+    });
+
+    it('kubectl exec --context production pod -- ls → ask (untrusted)', () => {
+      expect(wardenWith('kubectl exec --context production pod -- ls', { trustedKubectlContexts: contexts }).decision).toBe('ask');
+    });
+
+    it('kubectl exec --context=dev-east pod -- ls → allow (=syntax, glob)', () => {
+      expect(wardenWith('kubectl exec --context=dev-east pod -- ls', { trustedKubectlContexts: contexts }).decision).toBe('allow');
+    });
+  });
+
+  describe('Sprite whitelisting end-to-end', () => {
+    const sprites = ['my-sprite', 'dev-*'];
+
+    it('sprite exec -s my-sprite ls -la → allow', () => {
+      expect(wardenWith('sprite exec -s my-sprite ls -la', { trustedSprites: sprites }).decision).toBe('allow');
+    });
+
+    it('sprite -o myorg -s my-sprite exec npm start → allow', () => {
+      expect(wardenWith('sprite -o myorg -s my-sprite exec npm start', { trustedSprites: sprites }).decision).toBe('allow');
+    });
+
+    it('sprite exec -s my-sprite sudo rm -rf / → deny', () => {
+      expect(wardenWith('sprite exec -s my-sprite sudo rm -rf /', { trustedSprites: sprites }).decision).toBe('deny');
+    });
+
+    it('sprite exec -s unknown ls → ask (untrusted)', () => {
+      expect(wardenWith('sprite exec -s unknown ls', { trustedSprites: sprites }).decision).toBe('ask');
+    });
+
+    it('sprite console -s my-sprite → allow (interactive)', () => {
+      expect(wardenWith('sprite console -s my-sprite', { trustedSprites: sprites }).decision).toBe('allow');
+    });
+
+    it('sprite exec -s dev-web cat /etc/hosts → allow (glob)', () => {
+      expect(wardenWith('sprite exec -s dev-web cat /etc/hosts', { trustedSprites: sprites }).decision).toBe('allow');
     });
   });
 });

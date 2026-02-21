@@ -50,6 +50,9 @@ export interface WardenConfig {
   alwaysAllow?: string[];
   alwaysDeny?: string[];
   trustedSSHHosts?: string[];
+  trustedDockerContainers?: string[];
+  trustedKubectlContexts?: string[];
+  trustedSprites?: string[];
   defaultDecision: Decision;
   askOnSubshell: boolean;
 }

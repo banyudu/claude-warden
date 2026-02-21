@@ -4,6 +4,9 @@ export const DEFAULT_CONFIG: WardenConfig = {
   defaultDecision: 'ask',
   askOnSubshell: true,
   trustedSSHHosts: [],
+  trustedDockerContainers: [],
+  trustedKubectlContexts: [],
+  trustedSprites: [],
 
   alwaysAllow: [
     // Read-only file operations

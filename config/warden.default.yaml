@@ -34,6 +34,24 @@ askOnSubshell: true
 #   - "*.internal.company.com"
 #   - 192.168.1.*
 
+# Trusted Docker containers — docker exec to these containers are auto-allowed.
+# Remote commands are recursively evaluated through warden rules.
+# trustedDockerContainers:
+#   - my-app
+#   - dev-*
+
+# Trusted kubectl contexts — kubectl exec in these contexts are auto-allowed.
+# Remote commands (after --) are recursively evaluated through warden rules.
+# trustedKubectlContexts:
+#   - minikube
+#   - dev-cluster-*
+
+# Trusted Sprites — sprite exec/console to these sprites are auto-allowed.
+# Remote commands are recursively evaluated through warden rules.
+# trustedSprites:
+#   - my-sprite
+#   - dev-*
+
 # Command-specific rules (override built-in rules by command name)
 # rules:
 #   - command: npx

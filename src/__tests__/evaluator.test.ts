@@ -8,9 +8,13 @@ function eval_(cmd: string) {
   return evaluate(parseCommand(cmd), DEFAULT_CONFIG);
 }
 
-function evalWithSSH(cmd: string, trustedHosts: string[]) {
-  const config: WardenConfig = { ...structuredClone(DEFAULT_CONFIG), trustedSSHHosts: trustedHosts };
+function evalWith(cmd: string, overrides: Partial<WardenConfig>) {
+  const config: WardenConfig = { ...structuredClone(DEFAULT_CONFIG), ...overrides };
   return evaluate(parseCommand(cmd), config);
+}
+
+function evalWithSSH(cmd: string, trustedHosts: string[]) {
+  return evalWith(cmd, { trustedSSHHosts: trustedHosts });
 }
 
 describe('evaluator', () => {
@@ -273,6 +277,131 @@ describe('evaluator', () => {
 
     it('recursively evaluates ask-level remote commands', () => {
       expect(evalWithSSH('ssh devserver node script.js', hosts).decision).toBe('ask');
+    });
+  });
+
+  describe('Docker container whitelisting', () => {
+    const containers = ['my-app', 'dev-*'];
+
+    it('allows docker exec on trusted container', () => {
+      expect(evalWith('docker exec my-app ls', { trustedDockerContainers: containers }).decision).toBe('allow');
+    });
+
+    it('allows docker exec with flags on trusted container', () => {
+      expect(evalWith('docker exec -it my-app ls', { trustedDockerContainers: containers }).decision).toBe('allow');
+    });
+
+    it('allows docker exec interactive (no command) on trusted container', () => {
+      expect(evalWith('docker exec -it my-app', { trustedDockerContainers: containers }).decision).toBe('allow');
+    });
+
+    it('denies docker exec with dangerous command on trusted container', () => {
+      expect(evalWith('docker exec my-app sudo rm -rf /', { trustedDockerContainers: containers }).decision).toBe('deny');
+    });
+
+    it('asks for docker exec on untrusted container', () => {
+      expect(evalWith('docker exec unknown-app ls', { trustedDockerContainers: containers }).decision).toBe('ask');
+    });
+
+    it('matches glob patterns for containers', () => {
+      expect(evalWith('docker exec dev-web ls', { trustedDockerContainers: containers }).decision).toBe('allow');
+    });
+
+    it('does not intercept non-exec docker commands', () => {
+      expect(evalWith('docker ps', { trustedDockerContainers: containers }).decision).toBe('allow');
+      expect(evalWith('docker run ubuntu', { trustedDockerContainers: containers }).decision).toBe('ask');
+    });
+
+    it('skips docker exec flags with values', () => {
+      expect(evalWith('docker exec -e FOO=bar -u root my-app cat /etc/hosts', { trustedDockerContainers: containers }).decision).toBe('allow');
+    });
+  });
+
+  describe('kubectl context whitelisting', () => {
+    const contexts = ['minikube', 'dev-*'];
+
+    it('allows kubectl exec on trusted context with safe command', () => {
+      expect(evalWith('kubectl exec --context minikube my-pod -- cat /etc/hosts', { trustedKubectlContexts: contexts }).decision).toBe('allow');
+    });
+
+    it('allows kubectl exec interactive on trusted context', () => {
+      expect(evalWith('kubectl exec --context minikube -it my-pod', { trustedKubectlContexts: contexts }).decision).toBe('allow');
+    });
+
+    it('denies kubectl exec with dangerous command on trusted context', () => {
+      expect(evalWith('kubectl exec --context minikube my-pod -- sudo rm -rf /', { trustedKubectlContexts: contexts }).decision).toBe('deny');
+    });
+
+    it('asks for kubectl exec without context', () => {
+      expect(evalWith('kubectl exec my-pod -- ls', { trustedKubectlContexts: contexts }).decision).toBe('ask');
+    });
+
+    it('asks for kubectl exec on untrusted context', () => {
+      expect(evalWith('kubectl exec --context production my-pod -- ls', { trustedKubectlContexts: contexts }).decision).toBe('ask');
+    });
+
+    it('matches glob patterns for contexts', () => {
+      expect(evalWith('kubectl exec --context dev-cluster my-pod -- ls', { trustedKubectlContexts: contexts }).decision).toBe('allow');
+    });
+
+    it('handles --context=value syntax', () => {
+      expect(evalWith('kubectl exec --context=minikube my-pod -- ls', { trustedKubectlContexts: contexts }).decision).toBe('allow');
+    });
+
+    it('does not intercept non-exec kubectl commands', () => {
+      expect(evalWith('kubectl get pods --context minikube', { trustedKubectlContexts: contexts }).decision).toBe('ask');
+    });
+
+    it('handles namespace and container flags', () => {
+      expect(evalWith('kubectl exec --context minikube -n default -c app my-pod -- cat /tmp/log', { trustedKubectlContexts: contexts }).decision).toBe('allow');
+    });
+  });
+
+  describe('Sprite whitelisting', () => {
+    const sprites = ['my-sprite', 'dev-*'];
+
+    it('allows sprite exec on trusted sprite', () => {
+      expect(evalWith('sprite exec -s my-sprite ls -la', { trustedSprites: sprites }).decision).toBe('allow');
+    });
+
+    it('allows sprite x (alias) on trusted sprite', () => {
+      expect(evalWith('sprite x -s my-sprite ls', { trustedSprites: sprites }).decision).toBe('allow');
+    });
+
+    it('allows sprite console on trusted sprite', () => {
+      expect(evalWith('sprite console -s my-sprite', { trustedSprites: sprites }).decision).toBe('allow');
+    });
+
+    it('allows sprite c (alias) on trusted sprite', () => {
+      expect(evalWith('sprite c -s my-sprite', { trustedSprites: sprites }).decision).toBe('allow');
+    });
+
+    it('denies sprite exec with dangerous command on trusted sprite', () => {
+      expect(evalWith('sprite exec -s my-sprite sudo rm -rf /', { trustedSprites: sprites }).decision).toBe('deny');
+    });
+
+    it('asks for sprite exec on untrusted sprite', () => {
+      expect(evalWith('sprite exec -s unknown-sprite ls', { trustedSprites: sprites }).decision).toBe('ask');
+    });
+
+    it('matches glob patterns', () => {
+      expect(evalWith('sprite exec -s dev-web ls', { trustedSprites: sprites }).decision).toBe('allow');
+    });
+
+    it('handles -o and -s flags before subcommand', () => {
+      expect(evalWith('sprite -o myorg -s my-sprite exec ls', { trustedSprites: sprites }).decision).toBe('allow');
+    });
+
+    it('handles --sprite=value syntax', () => {
+      expect(evalWith('sprite exec --sprite=my-sprite ls', { trustedSprites: sprites }).decision).toBe('allow');
+    });
+
+    it('handles -o and -s with exec subcommand and command', () => {
+      expect(evalWith('sprite exec -o myorg -s my-sprite npm start', { trustedSprites: sprites }).decision).toBe('allow');
+    });
+
+    it('recursively evaluates ask-level remote commands', () => {
+      expect(evalWith('sprite exec -s my-sprite node script.js', { trustedSprites: sprites }).decision).toBe('ask');
     });
   });
 });
