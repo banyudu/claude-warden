@@ -1,11 +1,19 @@
 {
   "name": "claude-warden",
   "description": "Smart command safety filter for Claude Code",
+  "owner": {
+    "name": "banyudu"
+  },
   "plugins": [
     {
       "name": "claude-warden",
       "description": "Auto-approves safe commands, blocks dangerous ones, prompts for the rest",
-      "source": "."
+      "version": "1.0.1",
+      "author": {
+        "name": "banyudu"
+      },
+      "source": ".",
+      "category": "security"
     }
   ]
 }
