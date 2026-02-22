@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Smart command safety filter for Claude Code — auto-approves safe commands, blocks dangerous ones",
   "type": "module",
+  "main": "dist/index.cjs",
   "license": "MIT",
   "author": "banyudu",
   "repository": {
@@ -18,22 +19,30 @@
     "shell",
     "command-filter"
   ],
+  "files": [
+    "dist",
+    ".claude-plugin",
+    "hooks",
+    "config",
+    "marketplace.json",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "eval": "node dist/index.cjs"
-  },
-  "dependencies": {
-    "bash-parser": "^0.5.0",
-    "yaml": "^2.4.0"
+    "eval": "node dist/index.cjs",
+    "prepublishOnly": "pnpm run build && pnpm run test"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
+    "bash-parser": "^0.5.0",
     "tsup": "^8.0.0",
     "typescript": "^5.4.0",
-    "vitest": "^1.6.0"
+    "vitest": "^1.6.0",
+    "yaml": "^2.4.0"
   }
 }

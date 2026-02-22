@@ -23,7 +23,14 @@ Two commands inside Claude Code:
 
 That's it. Restart Claude Code and Warden is active.
 
-### Alternative: test locally without installing
+### Alternative: install from npm
+
+```bash
+npm install -g claude-warden
+claude --plugin-dir $(npm root -g)/claude-warden
+```
+
+### Alternative: test locally from source
 
 ```bash
 git clone https://github.com/banyudu/claude-warden.git
