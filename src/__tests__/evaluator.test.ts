@@ -233,10 +233,37 @@ describe('evaluator', () => {
       expect(evalWithSSH('ssh unknown-host', hosts).decision).toBe('ask');
     });
 
-    it('matches glob patterns', () => {
+    it('matches * glob patterns', () => {
       expect(evalWithSSH('ssh staging-web', hosts).decision).toBe('allow');
       expect(evalWithSSH('ssh app.internal.com', hosts).decision).toBe('allow');
       expect(evalWithSSH('ssh 192.168.1.50', hosts).decision).toBe('allow');
+    });
+
+    it('matches ? glob pattern (single char)', () => {
+      expect(evalWith('ssh dev?', { trustedSSHHosts: ['dev?'] }).decision).toBe('allow');
+      expect(evalWith('ssh devAB', { trustedSSHHosts: ['dev?'] }).decision).toBe('ask');
+    });
+
+    it('matches [...] character class', () => {
+      expect(evalWith('ssh dev1', { trustedSSHHosts: ['dev[123]'] }).decision).toBe('allow');
+      expect(evalWith('ssh dev4', { trustedSSHHosts: ['dev[123]'] }).decision).toBe('ask');
+    });
+
+    it('matches [!...] negated character class', () => {
+      expect(evalWith('ssh devX', { trustedSSHHosts: ['dev[!0-9]'] }).decision).toBe('allow');
+      expect(evalWith('ssh dev5', { trustedSSHHosts: ['dev[!0-9]'] }).decision).toBe('ask');
+    });
+
+    it('matches {a,b,c} brace expansion', () => {
+      expect(evalWith('ssh staging', { trustedSSHHosts: ['{staging,prod}'] }).decision).toBe('allow');
+      expect(evalWith('ssh prod', { trustedSSHHosts: ['{staging,prod}'] }).decision).toBe('allow');
+      expect(evalWith('ssh dev', { trustedSSHHosts: ['{staging,prod}'] }).decision).toBe('ask');
+    });
+
+    it('matches combined glob features', () => {
+      expect(evalWith('ssh web-staging-01', { trustedSSHHosts: ['{web,api}-*-[0-9][0-9]'] }).decision).toBe('allow');
+      expect(evalWith('ssh api-prod-99', { trustedSSHHosts: ['{web,api}-*-[0-9][0-9]'] }).decision).toBe('allow');
+      expect(evalWith('ssh db-staging-01', { trustedSSHHosts: ['{web,api}-*-[0-9][0-9]'] }).decision).toBe('ask');
     });
 
     it('skips SSH flags correctly', () => {

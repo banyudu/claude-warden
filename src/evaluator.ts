@@ -146,10 +146,52 @@ const SSH_FLAGS_WITH_VALUE = new Set([
   '-l', '-m', '-O', '-o', '-p', '-Q', '-R', '-S', '-W', '-w',
 ]);
 
-/** Convert a glob pattern (with `*` wildcards) to a RegExp. */
+/** Convert a glob pattern to a RegExp. Supports *, ?, [...], and {a,b,c}. */
 function globToRegex(pattern: string): RegExp {
-  const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
-  return new RegExp(`^${escaped}$`);
+  let regex = '';
+  let i = 0;
+  while (i < pattern.length) {
+    const ch = pattern[i];
+    if (ch === '*') {
+      regex += '.*';
+    } else if (ch === '?') {
+      regex += '.';
+    } else if (ch === '[') {
+      // Pass through character class until closing ]
+      const start = i;
+      i++;
+      // Handle negation [!...] → [^...]
+      if (i < pattern.length && pattern[i] === '!') {
+        regex += '[^';
+        i++;
+      } else {
+        regex += '[';
+      }
+      while (i < pattern.length && pattern[i] !== ']') {
+        regex += pattern[i];
+        i++;
+      }
+      if (i < pattern.length) {
+        regex += ']';
+      }
+    } else if (ch === '{') {
+      // Brace expansion {a,b,c} → (a|b|c)
+      const end = pattern.indexOf('}', i);
+      if (end !== -1) {
+        const alternatives = pattern.slice(i + 1, end).split(',').map(s => s.replace(/[.+^$|\\()]/g, '\\$&'));
+        regex += `(${alternatives.join('|')})`;
+        i = end;
+      } else {
+        regex += '\\{';
+      }
+    } else if ('.+^$|\\()'.includes(ch)) {
+      regex += '\\' + ch;
+    } else {
+      regex += ch;
+    }
+    i++;
+  }
+  return new RegExp(`^${regex}$`);
 }
 
 function matchesPattern(value: string, patterns: string[]): boolean {
