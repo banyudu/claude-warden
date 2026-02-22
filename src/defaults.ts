@@ -32,7 +32,7 @@ export const DEFAULT_CONFIG: WardenConfig = {
     // Pagers and formatters
     'bat', 'pygmentize', 'highlight',
     // Version managers (read-only)
-    'nvm', 'fnm', 'nvm', 'rbenv', 'pyenv',
+    'nvm', 'fnm', 'rbenv', 'pyenv',
     // Misc safe
     'cd', 'pushd', 'popd', 'dirs', 'hash', 'alias',
     'sleep', 'wait', 'time',
@@ -85,10 +85,11 @@ export const DEFAULT_CONFIG: WardenConfig = {
       default: 'ask',
       argPatterns: [
         {
-          match: { anyArgMatches: ['^(jest|vitest|tsx|tsc|eslint|prettier|turbo|next|vite|astro|playwright|prisma|drizzle-kit|tsup|esbuild|tailwindcss|storybook|wrangler)$'] },
+          match: { anyArgMatches: ['^(jest|vitest|tsx|ts-node|tsc|eslint|prettier|rimraf|mkdirp|concurrently|turbo|next|nuxt|vite|astro|playwright|cypress|mocha|nyc|c8|nodemon|ts-jest|tsup|esbuild|rollup|webpack|prisma|drizzle-kit|typeorm|knex|sequelize-cli|tailwindcss|postcss|autoprefixer|lint-staged|husky|changeset|semantic-release|lerna|nx|create-react-app|create-next-app|create-vite|degit|storybook|wrangler|netlify|vercel)$'] },
           decision: 'allow',
           description: 'Well-known dev tools',
         },
+        { match: { anyArgMatches: ['^--(version|help)$', '^-[vh]$'] }, decision: 'allow', description: 'Version/help flags' },
       ],
     },
     {
@@ -98,8 +99,20 @@ export const DEFAULT_CONFIG: WardenConfig = {
         { match: { anyArgMatches: ['^(publish|unpublish|deprecate|owner|access|token|adduser|login)$'] }, decision: 'ask', reason: 'Registry modification' },
       ],
     },
-    { command: 'pnpm', default: 'allow', argPatterns: [{ match: { anyArgMatches: ['^publish$'] }, decision: 'ask', reason: 'Publishing' }] },
-    { command: 'yarn', default: 'allow', argPatterns: [{ match: { anyArgMatches: ['^publish$'] }, decision: 'ask', reason: 'Publishing' }] },
+    {
+      command: 'pnpm',
+      default: 'allow',
+      argPatterns: [
+        { match: { anyArgMatches: ['^(publish|unpublish|deprecate|owner|access|token|adduser|login)$'] }, decision: 'ask', reason: 'Registry modification' },
+      ],
+    },
+    {
+      command: 'yarn',
+      default: 'allow',
+      argPatterns: [
+        { match: { anyArgMatches: ['^(publish|unpublish|owner|access|token|login|logout)$'] }, decision: 'ask', reason: 'Registry modification' },
+      ],
+    },
     {
       command: 'bun',
       default: 'ask',
@@ -126,7 +139,13 @@ export const DEFAULT_CONFIG: WardenConfig = {
     },
     { command: 'pip', default: 'allow' },
     { command: 'pip3', default: 'allow' },
-    { command: 'uv', default: 'allow' },
+    {
+      command: 'uv',
+      default: 'allow',
+      argPatterns: [
+        { match: { anyArgMatches: ['^publish$'] }, decision: 'ask', reason: 'Publishing to PyPI' },
+      ],
+    },
     { command: 'pipx', default: 'ask' },
 
     // --- Git ---
@@ -139,13 +158,31 @@ export const DEFAULT_CONFIG: WardenConfig = {
         { match: { anyArgMatches: ['^clean$'] }, decision: 'ask', reason: 'git clean removes untracked files' },
       ],
     },
-    { command: 'gh', default: 'allow' },
+    {
+      command: 'gh',
+      default: 'allow',
+      argPatterns: [
+        { match: { argsMatch: ['repo\\s+delete', 'repo\\s+archive'] }, decision: 'ask', reason: 'Destructive repo operation' },
+      ],
+    },
 
     // --- Build tools ---
     { command: 'make', default: 'allow' },
     { command: 'cmake', default: 'allow' },
-    { command: 'cargo', default: 'allow' },
-    { command: 'go', default: 'allow' },
+    {
+      command: 'cargo',
+      default: 'allow',
+      argPatterns: [
+        { match: { anyArgMatches: ['^(publish|login|logout|owner|yank)$'] }, decision: 'ask', reason: 'Registry modification' },
+      ],
+    },
+    {
+      command: 'go',
+      default: 'allow',
+      argPatterns: [
+        { match: { anyArgMatches: ['^generate$'] }, decision: 'ask', reason: 'go generate runs arbitrary commands' },
+      ],
+    },
     { command: 'rustup', default: 'allow' },
     { command: 'tsc', default: 'allow' },
     { command: 'turbo', default: 'allow' },

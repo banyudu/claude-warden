@@ -41,6 +41,26 @@ describe('integration: realistic commands', () => {
       expect(warden('pnpm install && pnpm run build').decision).toBe('allow');
     });
 
+    it('yarn install && yarn build → allow', () => {
+      expect(warden('yarn install && yarn build').decision).toBe('allow');
+    });
+
+    it('cargo build --release → allow', () => {
+      expect(warden('cargo build --release').decision).toBe('allow');
+    });
+
+    it('go build ./... → allow', () => {
+      expect(warden('go build ./...').decision).toBe('allow');
+    });
+
+    it('gh pr list → allow', () => {
+      expect(warden('gh pr list').decision).toBe('allow');
+    });
+
+    it('uv pip install requests → allow', () => {
+      expect(warden('uv pip install requests').decision).toBe('allow');
+    });
+
     it('mkdir -p src/components && touch src/components/Button.tsx → allow', () => {
       expect(warden('mkdir -p src/components && touch src/components/Button.tsx').decision).toBe('allow');
     });
@@ -85,6 +105,14 @@ describe('integration: realistic commands', () => {
 
     it('bunx vitest run → allow', () => {
       expect(warden('bunx vitest run').decision).toBe('allow');
+    });
+
+    it('bunx --version → allow', () => {
+      expect(warden('bunx --version').decision).toBe('allow');
+    });
+
+    it('bunx unknown-sketchy-package → ask', () => {
+      expect(warden('bunx unknown-sketchy-package').decision).toBe('ask');
     });
   });
 
@@ -151,6 +179,62 @@ describe('integration: realistic commands', () => {
 
     it('npm publish → ask', () => {
       expect(warden('npm publish').decision).toBe('ask');
+    });
+
+    it('pnpm publish → ask', () => {
+      expect(warden('pnpm publish').decision).toBe('ask');
+    });
+
+    it('pnpm adduser → ask', () => {
+      expect(warden('pnpm adduser').decision).toBe('ask');
+    });
+
+    it('pnpm token list → ask', () => {
+      expect(warden('pnpm token list').decision).toBe('ask');
+    });
+
+    it('yarn publish → ask', () => {
+      expect(warden('yarn publish').decision).toBe('ask');
+    });
+
+    it('yarn login → ask', () => {
+      expect(warden('yarn login').decision).toBe('ask');
+    });
+
+    it('yarn token list → ask', () => {
+      expect(warden('yarn token list').decision).toBe('ask');
+    });
+
+    it('cargo publish → ask', () => {
+      expect(warden('cargo publish').decision).toBe('ask');
+    });
+
+    it('cargo login → ask', () => {
+      expect(warden('cargo login').decision).toBe('ask');
+    });
+
+    it('cargo yank → ask', () => {
+      expect(warden('cargo yank').decision).toBe('ask');
+    });
+
+    it('cargo owner → ask', () => {
+      expect(warden('cargo owner').decision).toBe('ask');
+    });
+
+    it('go generate → ask', () => {
+      expect(warden('go generate').decision).toBe('ask');
+    });
+
+    it('gh repo delete → ask', () => {
+      expect(warden('gh repo delete').decision).toBe('ask');
+    });
+
+    it('gh repo archive → ask', () => {
+      expect(warden('gh repo archive').decision).toBe('ask');
+    });
+
+    it('uv publish → ask', () => {
+      expect(warden('uv publish').decision).toBe('ask');
     });
   });
 
