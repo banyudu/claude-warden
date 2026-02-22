@@ -1,0 +1,11 @@
+{
+  "name": "claude-warden",
+  "description": "Smart command safety filter for Claude Code",
+  "plugins": [
+    {
+      "name": "claude-warden",
+      "description": "Auto-approves safe commands, blocks dangerous ones, prompts for the rest",
+      "source": "."
+    }
+  ]
+}

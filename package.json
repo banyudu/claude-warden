@@ -1,12 +1,26 @@
 {
   "name": "claude-warden",
   "version": "1.0.0",
-  "description": "Smart command safety filter for Claude Code",
-  "private": true,
+  "description": "Smart command safety filter for Claude Code — auto-approves safe commands, blocks dangerous ones",
   "type": "module",
+  "license": "MIT",
+  "author": "banyudu",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/banyudu/claude-warden.git"
+  },
+  "homepage": "https://github.com/banyudu/claude-warden",
+  "keywords": [
+    "claude-code",
+    "claude-code-plugin",
+    "safety",
+    "security",
+    "shell",
+    "command-filter"
+  ],
   "scripts": {
-    "build": "tsup src/index.ts --format cjs --target node18 --outDir dist --clean --no-splitting",
-    "dev": "tsup src/index.ts --format cjs --target node18 --outDir dist --watch",
+    "build": "tsup",
+    "dev": "tsup --watch",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
