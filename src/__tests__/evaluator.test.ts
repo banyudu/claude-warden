@@ -186,12 +186,20 @@ describe('evaluator', () => {
   });
 
   describe('subshells', () => {
-    it('asks for commands with $()', () => {
-      expect(eval_('echo $(whoami)').decision).toBe('ask');
+    it('allows $(safe-command) when inner command is always-allow', () => {
+      expect(eval_('echo $(whoami)').decision).toBe('allow');
     });
 
-    it('asks for commands with backticks', () => {
-      expect(eval_('echo `date`').decision).toBe('ask');
+    it('allows backtick safe-command when inner command is always-allow', () => {
+      expect(eval_('echo `date`').decision).toBe('allow');
+    });
+
+    it('denies $(dangerous-command)', () => {
+      expect(eval_('echo $(sudo rm -rf /)').decision).toBe('deny');
+    });
+
+    it('asks for $(unknown-command)', () => {
+      expect(eval_('echo $(unknown-sketchy-tool)').decision).toBe('ask');
     });
   });
 

@@ -13,7 +13,20 @@ export function evaluate(parsed: ParseResult, config: WardenConfig): EvalResult 
     return { decision: 'allow', reason: 'Empty command', details: [] };
   }
 
-  if (parsed.hasSubshell && config.askOnSubshell) {
+  // Recursively evaluate extracted subshell commands
+  if (parsed.hasSubshell && parsed.subshellCommands.length > 0) {
+    for (const subCmd of parsed.subshellCommands) {
+      const subParsed = parseCommand(subCmd);
+      const subResult = evaluate(subParsed, config);
+      if (subResult.decision === 'deny') {
+        return { decision: 'deny', reason: `Subshell command: ${subResult.reason}`, details: subResult.details };
+      }
+      if (subResult.decision === 'ask') {
+        return { decision: 'ask', reason: `Subshell command: ${subResult.reason}`, details: subResult.details };
+      }
+    }
+  } else if (parsed.hasSubshell && parsed.subshellCommands.length === 0 && config.askOnSubshell) {
+    // Unparseable subshell (heredocs, complex constructs) — fall back to ask
     return { decision: 'ask', reason: 'Command contains subshell/command substitution', details: [] };
   }
 

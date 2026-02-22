@@ -18166,33 +18166,39 @@ function convertCommand(node) {
   const raw = rawParts.join(" ");
   return { command, args: args2, envPrefixes, raw };
 }
-function hasCommandExpansion(node) {
-  if (node.type === "CommandExpansion") return true;
+function collectCommandExpansions(node) {
+  const commands = [];
   if (node.type === "Command") {
     const cmd = node;
     if (cmd.suffix) {
       for (const s of cmd.suffix) {
         if (s.type === "Word" && s.expansion) {
           for (const exp of s.expansion) {
-            if (exp.type === "CommandExpansion") return true;
+            if (exp.type === "CommandExpansion" && exp.command) {
+              commands.push(exp.command);
+            }
           }
         }
       }
     }
     if (cmd.name?.expansion) {
       for (const exp of cmd.name.expansion) {
-        if (exp.type === "CommandExpansion") return true;
+        if (exp.type === "CommandExpansion" && exp.command) {
+          commands.push(exp.command);
+        }
       }
     }
   }
-  return false;
+  return commands;
 }
 function walkNode(node, result) {
   switch (node.type) {
     case "Command": {
       const cmd = node;
-      if (hasCommandExpansion(node)) {
+      const expansions = collectCommandExpansions(node);
+      if (expansions.length > 0) {
         result.hasSubshell = true;
+        result.subshellCommands.push(...expansions);
       }
       const parsed = convertCommand(cmd);
       if (!parsed) break;
@@ -18205,6 +18211,7 @@ function walkNode(node, result) {
           if (innerResult.hasSubshell) {
             result.hasSubshell = true;
           }
+          result.subshellCommands.push(...innerResult.subshellCommands);
         }
       } else {
         result.commands.push(parsed);
@@ -18249,35 +18256,35 @@ function walkNode(node, result) {
 }
 function parseCommand(input) {
   if (!input || !input.trim()) {
-    return { commands: [], hasSubshell: false, parseError: false };
+    return { commands: [], hasSubshell: false, subshellCommands: [], parseError: false };
   }
   const hasHeredoc = HEREDOC_REGEX.test(input);
   if (hasHeredoc) {
     const firstLine = input.split("\n")[0];
     const cmdPart = firstLine.replace(/<<-?\s*['"]?\w+['"]?.*$/, "").trim();
     if (!cmdPart) {
-      return { commands: [], hasSubshell: false, parseError: true };
+      return { commands: [], hasSubshell: false, subshellCommands: [], parseError: true };
     }
     try {
       const ast = (0, import_bash_parser.default)(cmdPart);
-      const result = { commands: [], hasSubshell: false };
+      const result = { commands: [], hasSubshell: false, subshellCommands: [] };
       for (const cmd of ast.commands) {
         walkNode(cmd, result);
       }
-      return { commands: result.commands, hasSubshell: true, parseError: false };
+      return { commands: result.commands, hasSubshell: true, subshellCommands: result.subshellCommands, parseError: false };
     } catch {
-      return { commands: [], hasSubshell: true, parseError: true };
+      return { commands: [], hasSubshell: true, subshellCommands: [], parseError: true };
     }
   }
   try {
     const ast = (0, import_bash_parser.default)(input);
-    const result = { commands: [], hasSubshell: false };
+    const result = { commands: [], hasSubshell: false, subshellCommands: [] };
     for (const cmd of ast.commands) {
       walkNode(cmd, result);
     }
-    return { commands: result.commands, hasSubshell: result.hasSubshell, parseError: false };
+    return { commands: result.commands, hasSubshell: result.hasSubshell, subshellCommands: result.subshellCommands, parseError: false };
   } catch {
-    return { commands: [], hasSubshell: false, parseError: true };
+    return { commands: [], hasSubshell: false, subshellCommands: [], parseError: true };
   }
 }
 
@@ -18289,7 +18296,18 @@ function evaluate(parsed, config) {
   if (parsed.commands.length === 0) {
     return { decision: "allow", reason: "Empty command", details: [] };
   }
-  if (parsed.hasSubshell && config.askOnSubshell) {
+  if (parsed.hasSubshell && parsed.subshellCommands.length > 0) {
+    for (const subCmd of parsed.subshellCommands) {
+      const subParsed = parseCommand(subCmd);
+      const subResult = evaluate(subParsed, config);
+      if (subResult.decision === "deny") {
+        return { decision: "deny", reason: `Subshell command: ${subResult.reason}`, details: subResult.details };
+      }
+      if (subResult.decision === "ask") {
+        return { decision: "ask", reason: `Subshell command: ${subResult.reason}`, details: subResult.details };
+      }
+    }
+  } else if (parsed.hasSubshell && parsed.subshellCommands.length === 0 && config.askOnSubshell) {
     return { decision: "ask", reason: "Command contains subshell/command substitution", details: [] };
   }
   const details = [];

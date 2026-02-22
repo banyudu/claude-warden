@@ -145,8 +145,8 @@ describe('integration: realistic commands', () => {
       expect(warden('git push --force origin main').decision).toBe('ask');
     });
 
-    it('echo $(whoami) → ask (subshell)', () => {
-      expect(warden('echo $(whoami)').decision).toBe('ask');
+    it('echo $(whoami) → allow (safe subshell)', () => {
+      expect(warden('echo $(whoami)').decision).toBe('allow');
     });
 
     it('npm publish → ask', () => {
@@ -281,6 +281,40 @@ describe('integration: realistic commands', () => {
 
     it('kubectl exec --context=dev-east pod -- ls → allow (=syntax, glob)', () => {
       expect(wardenWith('kubectl exec --context=dev-east pod -- ls', { trustedKubectlContexts: contexts }).decision).toBe('allow');
+    });
+  });
+
+  describe('command substitution recursive evaluation', () => {
+    it('echo $(date) → allow (date is safe)', () => {
+      expect(warden('echo $(date)').decision).toBe('allow');
+    });
+
+    it('echo $(whoami) → allow (whoami is safe)', () => {
+      expect(warden('echo $(whoami)').decision).toBe('allow');
+    });
+
+    it('echo $(sudo rm -rf /) → deny (dangerous inner command)', () => {
+      expect(warden('echo $(sudo rm -rf /)').decision).toBe('deny');
+    });
+
+    it('echo $(unknown-tool foo) → ask (unknown inner command)', () => {
+      expect(warden('echo $(unknown-tool foo)').decision).toBe('ask');
+    });
+
+    it('echo `date` → allow (backtick safe command)', () => {
+      expect(warden('echo `date`').decision).toBe('allow');
+    });
+
+    it('echo "today is $(date)" → allow (safe inside quotes)', () => {
+      expect(warden('echo "today is $(date)"').decision).toBe('allow');
+    });
+
+    it('echo $(node script.js) → ask (node script is conditional)', () => {
+      expect(warden('echo $(node script.js)').decision).toBe('ask');
+    });
+
+    it('echo $(ls -la) && echo done → allow (all safe)', () => {
+      expect(warden('echo $(ls -la) && echo done').decision).toBe('allow');
     });
   });
 

@@ -20,6 +20,7 @@ interface AssignmentNode extends AstNode {
 
 interface ExpansionNode extends AstNode {
   type: 'CommandExpansion' | 'ParameterExpansion' | 'ArithmeticExpansion';
+  command?: string;
 }
 
 interface CommandNode extends AstNode {
@@ -54,6 +55,7 @@ interface ScriptNode extends AstNode {
 interface WalkResult {
   commands: ParsedCommand[];
   hasSubshell: boolean;
+  subshellCommands: string[];
 }
 
 const HEREDOC_REGEX = /<<-?\s*['"]?\w+['"]?/;
@@ -95,29 +97,32 @@ function convertCommand(node: CommandNode): ParsedCommand | null {
   return { command, args, envPrefixes, raw };
 }
 
-function hasCommandExpansion(node: AstNode): boolean {
-  if (node.type === 'CommandExpansion') return true;
+function collectCommandExpansions(node: AstNode): string[] {
+  const commands: string[] = [];
 
-  // Check suffix words for expansions
   if (node.type === 'Command') {
     const cmd = node as CommandNode;
     if (cmd.suffix) {
       for (const s of cmd.suffix) {
         if (s.type === 'Word' && (s as WordNode).expansion) {
           for (const exp of (s as WordNode).expansion!) {
-            if (exp.type === 'CommandExpansion') return true;
+            if (exp.type === 'CommandExpansion' && exp.command) {
+              commands.push(exp.command);
+            }
           }
         }
       }
     }
     if (cmd.name?.expansion) {
       for (const exp of cmd.name.expansion) {
-        if (exp.type === 'CommandExpansion') return true;
+        if (exp.type === 'CommandExpansion' && exp.command) {
+          commands.push(exp.command);
+        }
       }
     }
   }
 
-  return false;
+  return commands;
 }
 
 function walkNode(node: AstNode, result: WalkResult): void {
@@ -126,8 +131,10 @@ function walkNode(node: AstNode, result: WalkResult): void {
       const cmd = node as CommandNode;
 
       // Check for command substitutions
-      if (hasCommandExpansion(node)) {
+      const expansions = collectCommandExpansions(node);
+      if (expansions.length > 0) {
         result.hasSubshell = true;
+        result.subshellCommands.push(...expansions);
       }
 
       const parsed = convertCommand(cmd);
@@ -147,6 +154,7 @@ function walkNode(node: AstNode, result: WalkResult): void {
           if (innerResult.hasSubshell) {
             result.hasSubshell = true;
           }
+          result.subshellCommands.push(...innerResult.subshellCommands);
         }
       } else {
         result.commands.push(parsed);
@@ -211,7 +219,7 @@ function hasHeredocRedirect(node: CommandNode): boolean {
  */
 export function parseCommand(input: string): ParseResult {
   if (!input || !input.trim()) {
-    return { commands: [], hasSubshell: false, parseError: false };
+    return { commands: [], hasSubshell: false, subshellCommands: [], parseError: false };
   }
 
   // Detect heredocs before parsing — bash-parser misparses heredoc body as commands.
@@ -222,32 +230,32 @@ export function parseCommand(input: string): ParseResult {
     const firstLine = input.split('\n')[0];
     const cmdPart = firstLine.replace(/<<-?\s*['"]?\w+['"]?.*$/, '').trim();
     if (!cmdPart) {
-      return { commands: [], hasSubshell: false, parseError: true };
+      return { commands: [], hasSubshell: false, subshellCommands: [], parseError: true };
     }
     try {
       const ast = parse(cmdPart) as ScriptNode;
-      const result: WalkResult = { commands: [], hasSubshell: false };
+      const result: WalkResult = { commands: [], hasSubshell: false, subshellCommands: [] };
       for (const cmd of ast.commands) {
         walkNode(cmd, result);
       }
       // Heredocs are complex — flag as hasSubshell so evaluator can decide
-      return { commands: result.commands, hasSubshell: true, parseError: false };
+      return { commands: result.commands, hasSubshell: true, subshellCommands: result.subshellCommands, parseError: false };
     } catch {
-      return { commands: [], hasSubshell: true, parseError: true };
+      return { commands: [], hasSubshell: true, subshellCommands: [], parseError: true };
     }
   }
 
   try {
     const ast = parse(input) as ScriptNode;
-    const result: WalkResult = { commands: [], hasSubshell: false };
+    const result: WalkResult = { commands: [], hasSubshell: false, subshellCommands: [] };
 
     for (const cmd of ast.commands) {
       walkNode(cmd, result);
     }
 
-    return { commands: result.commands, hasSubshell: result.hasSubshell, parseError: false };
+    return { commands: result.commands, hasSubshell: result.hasSubshell, subshellCommands: result.subshellCommands, parseError: false };
   } catch {
     // Parse failure — return parseError so evaluator returns 'ask'
-    return { commands: [], hasSubshell: false, parseError: true };
+    return { commands: [], hasSubshell: false, subshellCommands: [], parseError: true };
   }
 }

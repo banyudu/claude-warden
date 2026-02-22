@@ -76,11 +76,31 @@ describe('parseCommand', () => {
   it('detects subshells with $()', () => {
     const result = parseCommand('echo $(whoami)');
     expect(result.hasSubshell).toBe(true);
+    expect(result.subshellCommands).toEqual(['whoami']);
   });
 
   it('detects subshells with backticks', () => {
     const result = parseCommand('echo `date`');
     expect(result.hasSubshell).toBe(true);
+    expect(result.subshellCommands).toEqual(['date']);
+  });
+
+  it('extracts subshellCommands from complex $() expansion', () => {
+    const result = parseCommand('echo $(curl http://example.com)');
+    expect(result.hasSubshell).toBe(true);
+    expect(result.subshellCommands).toEqual(['curl http://example.com']);
+  });
+
+  it('extracts multiple subshellCommands', () => {
+    const result = parseCommand('echo $(date) $(whoami)');
+    expect(result.hasSubshell).toBe(true);
+    expect(result.subshellCommands).toContain('date');
+    expect(result.subshellCommands).toContain('whoami');
+  });
+
+  it('does not set subshellCommands for regular commands', () => {
+    const result = parseCommand('ls -la');
+    expect(result.subshellCommands).toEqual([]);
   });
 
   it('normalizes command paths to basename', () => {

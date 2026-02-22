@@ -8,6 +8,7 @@ export interface ParsedCommand {
 export interface ParseResult {
   commands: ParsedCommand[];
   hasSubshell: boolean;
+  subshellCommands: string[];
   parseError: boolean;
 }
 
