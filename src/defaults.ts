@@ -52,6 +52,15 @@ export const DEFAULT_CONFIG: WardenConfig = {
     ],
 
     rules: [
+      // --- CLI tools ---
+      {
+        command: 'claude',
+        default: 'ask',
+        argPatterns: [
+          { match: { anyArgMatches: ['^--(version|help)$', '^-[vh]$'] }, decision: 'allow', description: 'Version/help flags' },
+        ],
+      },
+
       // --- Node.js ecosystem ---
       {
         command: 'node',
