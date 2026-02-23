@@ -34,6 +34,8 @@ export const DEFAULT_CONFIG: WardenConfig = {
       'bat', 'pygmentize', 'highlight',
       // Version managers (read-only)
       'nvm', 'fnm', 'rbenv', 'pyenv',
+      // Terminal
+      'stty', 'tput', 'reset', 'clear',
       // Misc safe
       'cd', 'pushd', 'popd', 'dirs', 'hash', 'alias',
       'sleep', 'wait', 'time',

@@ -18888,6 +18888,11 @@ var DEFAULT_CONFIG = {
       "fnm",
       "rbenv",
       "pyenv",
+      // Terminal
+      "stty",
+      "tput",
+      "reset",
+      "clear",
       // Misc safe
       "cd",
       "pushd",
@@ -18931,6 +18936,14 @@ var DEFAULT_CONFIG = {
       "launchctl"
     ],
     rules: [
+      // --- CLI tools ---
+      {
+        command: "claude",
+        default: "ask",
+        argPatterns: [
+          { match: { anyArgMatches: ["^--(version|help)$", "^-[vh]$"] }, decision: "allow", description: "Version/help flags" }
+        ]
+      },
       // --- Node.js ecosystem ---
       {
         command: "node",
