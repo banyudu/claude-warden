@@ -15,7 +15,7 @@ Warden hooks into Claude Code's `PreToolUse` event and **parses every shell comm
 This AST-based approach enables:
 
 - **Pipe and chain decomposition**: `cat file | grep pattern | wc -l` is parsed into three commands, each evaluated separately. All safe → auto-allow. One dangerous → deny the whole pipeline.
-- **Argument-aware rules**: `git status` → allow, `git push --force` → prompt. `rm temp.txt` → allow, `rm -rf /` → deny. The evaluator matches against argument patterns, not just command names.
+- **Argument-aware rules**: `git status` → allow, `git push --force` → prompt. `rm temp.txt` → allow, `rm -rf /` → prompt. The evaluator matches against argument patterns, not just command names.
 - **Recursive evaluation of remote commands**: `ssh devserver 'cat /etc/hosts'` → Warden extracts the remote command, parses it through the same pipeline, and allows it. `ssh devserver 'sudo rm -rf /'` → denied. Same for `docker exec`, `kubectl exec`, and `sprite exec`.
 - **Shell wrapper unwrapping**: `sh -c "npm run build && npm test"` → the inner command is extracted and recursively parsed/evaluated, not treated as an opaque string.
 - **Env prefix handling**: `NODE_ENV=production npm run build` → correctly evaluates `npm run build`, ignoring the env prefix.
@@ -32,7 +32,7 @@ The result: **100+ common dev commands auto-approved**, dangerous commands auto-
 | `cat file \| grep pattern \| wc -l` | Prompted | Auto-allowed (3 safe commands) |
 | `npm run build && npm test` | Prompted | Auto-allowed |
 | `git push --force origin main` | Prompted | Prompted (force push is risky) |
-| `sudo rm -rf /` | Prompted | Auto-denied |
+| `sudo rm -rf /` | Prompted | Auto-denied (sudo is blocked) |
 | `ssh devserver cat /etc/hosts` | Prompted | Auto-allowed (trusted host + safe cmd) |
 | `ssh devserver sudo rm -rf /` | Prompted | Auto-denied (trusted host + dangerous cmd) |
 
@@ -147,7 +147,7 @@ File readers (`cat`, `head`, `tail`, `less`), search tools (`grep`, `rg`, `find`
 ### Conditional rules
 Commands like `node`, `npx`, `docker`, `ssh`, `git push --force`, `rm`, `chmod` have argument-aware rules. For example:
 - `git` is allowed but `git push --force` triggers a prompt
-- `rm temp.txt` is allowed but `rm -rf /` is denied
+- `rm temp.txt` is allowed but `rm -rf /` is prompted
 - `chmod 644 file` prompts but `chmod -R 777 /var` is denied
 
 ### Trusted remote targets

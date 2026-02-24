@@ -135,8 +135,8 @@ describe('integration: realistic commands', () => {
       expect(warden('sudo rm -rf /').decision).toBe('deny');
     });
 
-    it('rm -rf / → deny (argPattern)', () => {
-      expect(warden('rm -rf /').decision).toBe('deny');
+    it('rm -rf / → ask (argPattern)', () => {
+      expect(warden('rm -rf /').decision).toBe('ask');
     });
 
     it('echo hello && sudo apt install malware → deny', () => {

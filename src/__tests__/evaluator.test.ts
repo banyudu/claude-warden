@@ -55,12 +55,12 @@ describe('evaluator', () => {
   });
 
   describe('dangerous arg patterns', () => {
-    it('denies rm -rf', () => {
-      expect(eval_('rm -rf /').decision).toBe('deny');
+    it('asks for rm -rf', () => {
+      expect(eval_('rm -rf /').decision).toBe('ask');
     });
 
-    it('denies rm -fr', () => {
-      expect(eval_('rm -fr /tmp/stuff').decision).toBe('deny');
+    it('asks for rm -fr', () => {
+      expect(eval_('rm -fr /tmp/stuff').decision).toBe('ask');
     });
 
     it('denies chmod -R 777', () => {

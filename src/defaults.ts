@@ -235,7 +235,7 @@ export const DEFAULT_CONFIG: WardenConfig = {
         command: 'rm',
         default: 'ask',
         argPatterns: [
-          { match: { argsMatch: ['-[^\\s]*r[^\\s]*f|-[^\\s]*f[^\\s]*r'] }, decision: 'deny', reason: 'Recursive force delete (rm -rf)' },
+          { match: { argsMatch: ['-[^\\s]*r[^\\s]*f|-[^\\s]*f[^\\s]*r'] }, decision: 'ask', reason: 'Recursive force delete (rm -rf)' },
           { match: { argsMatch: ['-[^\\s]*r'] }, decision: 'ask', reason: 'Recursive delete' },
           { match: { argCount: { max: 3 }, not: false }, decision: 'allow', description: 'Deleting a small number of non-recursive files' },
         ],
