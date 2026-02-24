@@ -63,6 +63,29 @@ export const DEFAULT_CONFIG: WardenConfig = {
         ],
       },
 
+      // --- Shell interpreters ---
+      {
+        command: 'bash',
+        default: 'ask',
+        argPatterns: [
+          { match: { anyArgMatches: ['^--(version|help)$'] }, decision: 'allow', description: 'Version/help flags' },
+        ],
+      },
+      {
+        command: 'sh',
+        default: 'ask',
+        argPatterns: [
+          { match: { anyArgMatches: ['^--(version|help)$'] }, decision: 'allow', description: 'Version/help flags' },
+        ],
+      },
+      {
+        command: 'zsh',
+        default: 'ask',
+        argPatterns: [
+          { match: { anyArgMatches: ['^--(version|help)$'] }, decision: 'allow', description: 'Version/help flags' },
+        ],
+      },
+
       // --- Node.js ecosystem ---
       {
         command: 'node',
