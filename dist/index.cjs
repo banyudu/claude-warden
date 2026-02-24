@@ -19243,9 +19243,12 @@ function generateAllowSnippet(details) {
   return lines.join("\n");
 }
 function formatSystemMessage(decision, rawCommand, details) {
-  const header = decision === "deny" ? "[warden] Command blocked" : "[warden] Command flagged for review";
-  const lines = [header, ""];
   const relevant = details.filter((d) => d.decision !== "allow");
+  if (decision === "ask") {
+    const parts = relevant.map((d) => `\`${d.command}\`: ${d.reason}`);
+    return `[warden] ${parts.join(" | ")} \u2014 To auto-allow, see /warden-allow`;
+  }
+  const lines = ["[warden] Command blocked", ""];
   if (relevant.length > 0) {
     for (const d of relevant) {
       lines.push(`- \`${d.command}\`: ${d.reason}`);
@@ -19304,14 +19307,26 @@ async function main() {
   }
   if (result.decision === "deny") {
     const msg2 = formatSystemMessage("deny", command, result.details);
-    const output2 = { systemMessage: msg2 };
+    const output2 = {
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        permissionDecision: "deny",
+        permissionDecisionReason: msg2
+      }
+    };
     process.stdout.write(JSON.stringify(output2));
     process.stderr.write(`[warden] Blocked: ${result.reason}
 `);
     process.exit(2);
   }
   const msg = formatSystemMessage("ask", command, result.details);
-  const output = { systemMessage: msg };
+  const output = {
+    hookSpecificOutput: {
+      hookEventName: "PreToolUse",
+      permissionDecision: "ask",
+      permissionDecisionReason: msg
+    }
+  };
   process.stdout.write(JSON.stringify(output));
   process.exit(0);
 }

@@ -42,14 +42,17 @@ export function formatSystemMessage(
   rawCommand: string,
   details: CommandEvalDetail[],
 ): string {
-  const header = decision === 'deny'
-    ? '[warden] Command blocked'
-    : '[warden] Command flagged for review';
-
-  const lines: string[] = [header, ''];
-
-  // Per-command reasons
   const relevant = details.filter(d => d.decision !== 'allow');
+
+  // Compact single-line format for ask decisions
+  if (decision === 'ask') {
+    const parts = relevant.map(d => `\`${d.command}\`: ${d.reason}`);
+    return `[warden] ${parts.join(' | ')} — To auto-allow, see /warden-allow`;
+  }
+
+  // Verbose format for deny decisions
+  const lines: string[] = ['[warden] Command blocked', ''];
+
   if (relevant.length > 0) {
     for (const d of relevant) {
       lines.push(`- \`${d.command}\`: ${d.reason}`);
@@ -57,7 +60,6 @@ export function formatSystemMessage(
     lines.push('');
   }
 
-  // YAML snippet
   const snippet = generateAllowSnippet(details);
   if (snippet) {
     lines.push('To allow this in the future, add to your warden config:');
