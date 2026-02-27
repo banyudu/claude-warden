@@ -189,6 +189,27 @@ describe('parseCommand', () => {
     expect(result.commands[0].command).toBe('git');
   });
 
+  it('does not flag << inside quoted string args as heredoc', () => {
+    // << inside a quoted argument should NOT trigger the heredoc first-line extraction path.
+    // bash-parser correctly handles this as a CommandExpansion inside a Word.
+    const result = parseCommand('git commit -m "fix: handle <<EOF pattern"');
+    expect(result.parseError).toBe(false);
+    expect(result.hasSubshell).toBe(false);
+    expect(result.commands).toHaveLength(1);
+    expect(result.commands[0].command).toBe('git');
+    expect(result.commands[0].args).toContain('fix: handle <<EOF pattern');
+  });
+
+  it('handles $(cat <<EOF) inside quoted args without false heredoc detection', () => {
+    // $(cat <<EOF) inside a quoted string is a CommandExpansion (hasSubshell=true),
+    // but should NOT trigger the heredoc first-line extraction fallback.
+    const result = parseCommand('git commit -m "fix: handle $(cat <<EOF) heredoc"');
+    expect(result.parseError).toBe(false);
+    expect(result.hasSubshell).toBe(true); // has CommandExpansion
+    expect(result.commands).toHaveLength(1);
+    expect(result.commands[0].command).toBe('git');
+  });
+
   it('still flags bare heredocs (without cat subshell) as complex', () => {
     const result = parseCommand('cat <<EOF\nhello\nEOF');
     expect(result.hasSubshell).toBe(true);

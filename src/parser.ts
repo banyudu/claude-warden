@@ -228,6 +228,35 @@ function hasHeredocRedirect(node: CommandNode): boolean {
 /**
  * Parse a full shell command string into individual commands.
  */
+/**
+ * Check if any top-level Command node in the AST has a heredoc redirect.
+ * Skips expansion/commandAST children — heredocs inside $() are handled
+ * correctly by bash-parser and don't cause misparse of body lines.
+ */
+function astHasHeredoc(ast: ScriptNode): boolean {
+  function check(node: AstNode): boolean {
+    if (node.type === 'Command') {
+      if (hasHeredocRedirect(node as CommandNode)) return true;
+    }
+    // Recurse into child nodes, but skip commandAST inside expansions
+    for (const [key, value] of Object.entries(node)) {
+      if (key === 'commandAST' || key === 'expansion') continue;
+      if (Array.isArray(value)) {
+        for (const child of value) {
+          if (child && typeof child === 'object' && 'type' in child && check(child as AstNode)) return true;
+        }
+      } else if (value && typeof value === 'object' && 'type' in (value as object)) {
+        if (check(value as AstNode)) return true;
+      }
+    }
+    return false;
+  }
+  for (const cmd of ast.commands) {
+    if (check(cmd)) return true;
+  }
+  return false;
+}
+
 export function parseCommand(input: string): ParseResult {
   if (!input || !input.trim()) {
     return { commands: [], hasSubshell: false, subshellCommands: [], parseError: false };
@@ -238,40 +267,56 @@ export function parseCommand(input: string): ParseResult {
   // so the parser sees clean commands (e.g. `gh pr create --body "__HEREDOC_TEXT__"`).
   input = preprocessCatHeredocs(input);
 
-  // Detect heredocs before parsing — bash-parser misparses heredoc body as commands.
-  // Pre-strip heredoc content and only parse the command portion.
-  const hasHeredoc = HEREDOC_REGEX.test(input);
-  if (hasHeredoc) {
-    // Extract just the first line (the actual command before the heredoc)
-    const firstLine = input.split('\n')[0];
-    const cmdPart = firstLine.replace(/<<-?\s*['"]?\w+['"]?.*$/, '').trim();
-    if (!cmdPart) {
-      return { commands: [], hasSubshell: false, subshellCommands: [], parseError: true };
-    }
-    try {
-      const ast = parse(cmdPart) as ScriptNode;
-      const result: WalkResult = { commands: [], hasSubshell: false, subshellCommands: [] };
-      for (const cmd of ast.commands) {
-        walkNode(cmd, result);
-      }
-      // Heredocs are complex — flag as hasSubshell so evaluator can decide
-      return { commands: result.commands, hasSubshell: true, subshellCommands: result.subshellCommands, parseError: false };
-    } catch {
-      return { commands: [], hasSubshell: true, subshellCommands: [], parseError: true };
-    }
-  }
-
   try {
     const ast = parse(input) as ScriptNode;
     const result: WalkResult = { commands: [], hasSubshell: false, subshellCommands: [] };
 
+    // Check if the AST contains actual heredoc redirects (dless/dlessdash).
+    // bash-parser misparses heredoc body lines as separate commands, so we
+    // need to fall back to first-line extraction for real heredocs.
+    if (astHasHeredoc(ast)) {
+      const firstLine = input.split('\n')[0];
+      const cmdPart = firstLine.replace(/<<-?\s*['"]?\w+['"]?.*$/, '').trim();
+      if (!cmdPart) {
+        return { commands: [], hasSubshell: false, subshellCommands: [], parseError: true };
+      }
+      try {
+        const cmdAst = parse(cmdPart) as ScriptNode;
+        for (const cmd of cmdAst.commands) {
+          walkNode(cmd, result);
+        }
+        // Heredocs are complex — flag as hasSubshell so evaluator can decide
+        return { commands: result.commands, hasSubshell: true, subshellCommands: result.subshellCommands, parseError: false };
+      } catch {
+        return { commands: [], hasSubshell: true, subshellCommands: [], parseError: true };
+      }
+    }
+
+    // No heredoc nodes — normal AST walking, no false positive
     for (const cmd of ast.commands) {
       walkNode(cmd, result);
     }
 
     return { commands: result.commands, hasSubshell: result.hasSubshell, subshellCommands: result.subshellCommands, parseError: false };
   } catch {
-    // Parse failure — return parseError so evaluator returns 'ask'
+    // Parse failure — use regex fallback for heredoc detection
+    if (HEREDOC_REGEX.test(input)) {
+      const firstLine = input.split('\n')[0];
+      const cmdPart = firstLine.replace(/<<-?\s*['"]?\w+['"]?.*$/, '').trim();
+      if (!cmdPart) {
+        return { commands: [], hasSubshell: true, subshellCommands: [], parseError: true };
+      }
+      try {
+        const ast = parse(cmdPart) as ScriptNode;
+        const result: WalkResult = { commands: [], hasSubshell: false, subshellCommands: [] };
+        for (const cmd of ast.commands) {
+          walkNode(cmd, result);
+        }
+        return { commands: result.commands, hasSubshell: true, subshellCommands: result.subshellCommands, parseError: false };
+      } catch {
+        return { commands: [], hasSubshell: true, subshellCommands: [], parseError: true };
+      }
+    }
     return { commands: [], hasSubshell: false, subshellCommands: [], parseError: true };
   }
 }
