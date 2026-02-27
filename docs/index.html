@@ -1,0 +1,761 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Claude Warden — Smart Command Safety for Claude Code</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --border: #30363d;
+  --text: #e6edf3;
+  --text-muted: #8b949e;
+  --accent: #58a6ff;
+  --green: #3fb950;
+  --red: #f85149;
+  --yellow: #d29922;
+  --green-bg: rgba(63,185,80,.12);
+  --red-bg: rgba(248,81,73,.12);
+  --yellow-bg: rgba(210,153,34,.12);
+  --mono: 'SF Mono', 'Cascadia Code', 'Fira Code', Consolas, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  line-height: 1.6;
+  overflow-x: hidden;
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.container { max-width: 960px; margin: 0 auto; padding: 0 24px; }
+
+/* Hero */
+.hero {
+  text-align: center;
+  padding: 100px 24px 80px;
+  position: relative;
+}
+.hero::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 200px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--border), transparent);
+}
+.hero h1 {
+  font-size: 3rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-bottom: 12px;
+}
+.hero h1 .accent { color: var(--accent); }
+.hero .tagline {
+  font-size: 1.25rem;
+  color: var(--text-muted);
+  margin-bottom: 32px;
+  max-width: 560px;
+  margin-left: auto;
+  margin-right: auto;
+}
+.install-box {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 20px;
+  font-family: var(--mono);
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: border-color .2s;
+}
+.install-box:hover { border-color: var(--accent); }
+.install-box .prompt { color: var(--text-muted); user-select: none; }
+.install-box .copy-hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-family: var(--sans);
+}
+
+/* Sections */
+section { padding: 80px 0; }
+section h2 {
+  font-size: 2rem;
+  font-weight: 600;
+  margin-bottom: 16px;
+  letter-spacing: -0.01em;
+}
+section .subtitle {
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  margin-bottom: 40px;
+  max-width: 640px;
+}
+
+/* Pipeline */
+.pipeline-steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-top: 32px;
+}
+.pipeline-step {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px;
+}
+.pipeline-step .step-num {
+  display: inline-block;
+  width: 28px;
+  height: 28px;
+  line-height: 28px;
+  text-align: center;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--bg);
+  font-size: 0.85rem;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+.pipeline-step h3 { font-size: 1.05rem; margin-bottom: 8px; }
+.pipeline-step p { color: var(--text-muted); font-size: 0.9rem; }
+
+/* Animation Section */
+.animation-section { background: var(--surface); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+
+.anim-container {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.anim-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.anim-toolbar .dots { display: flex; gap: 6px; }
+.anim-toolbar .dot { width: 10px; height: 10px; border-radius: 50%; }
+.anim-toolbar .dot:nth-child(1) { background: var(--red); }
+.anim-toolbar .dot:nth-child(2) { background: var(--yellow); }
+.anim-toolbar .dot:nth-child(3) { background: var(--green); }
+.anim-toolbar .title {
+  flex: 1;
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.anim-body { padding: 24px; min-height: 360px; }
+
+/* Command input display */
+.cmd-input {
+  font-family: var(--mono);
+  font-size: 0.95rem;
+  padding: 12px 16px;
+  background: rgba(255,255,255,.03);
+  border-radius: 8px;
+  margin-bottom: 24px;
+  border: 1px solid var(--border);
+  overflow-x: auto;
+  white-space: nowrap;
+}
+.cmd-input .prompt-char { color: var(--green); margin-right: 8px; }
+.cmd-input .operator { color: var(--yellow); font-weight: 700; }
+
+/* Split cards */
+.split-cards {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+  min-height: 80px;
+}
+.split-card {
+  flex: 1;
+  min-width: 160px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 16px;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  opacity: 0;
+  transform: translateY(12px);
+  transition: opacity .4s, transform .4s, border-color .4s, background .4s;
+}
+.split-card.visible { opacity: 1; transform: translateY(0); }
+.split-card .card-label {
+  font-family: var(--sans);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+.split-card .card-op {
+  font-size: 0.75rem;
+  color: var(--yellow);
+  margin-top: 4px;
+}
+
+/* Decision badges */
+.decision-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  font-family: var(--sans);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0;
+  transition: opacity .4s;
+}
+.decision-badge.visible { opacity: 1; }
+.decision-badge.allow { background: var(--green-bg); color: var(--green); }
+.decision-badge.deny { background: var(--red-bg); color: var(--red); }
+.decision-badge.ask { background: var(--yellow-bg); color: var(--yellow); }
+
+/* Final result */
+.final-result {
+  text-align: center;
+  padding: 16px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 1.1rem;
+  opacity: 0;
+  transform: scale(0.95);
+  transition: opacity .4s, transform .4s;
+}
+.final-result.visible { opacity: 1; transform: scale(1); }
+.final-result.allow { background: var(--green-bg); color: var(--green); border: 1px solid rgba(63,185,80,.3); }
+.final-result.deny { background: var(--red-bg); color: var(--red); border: 1px solid rgba(248,81,73,.3); }
+.final-result.ask { background: var(--yellow-bg); color: var(--yellow); border: 1px solid rgba(210,153,34,.3); }
+
+/* Combine logic */
+.combine-logic {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  margin-bottom: 16px;
+  opacity: 0;
+  transition: opacity .4s;
+}
+.combine-logic.visible { opacity: 1; }
+
+/* Controls */
+.anim-controls {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  margin-top: 24px;
+}
+.anim-btn {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 8px 20px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: border-color .2s, background .2s;
+  font-family: var(--sans);
+}
+.anim-btn:hover { border-color: var(--accent); background: rgba(88,166,255,.08); }
+.anim-btn:disabled { opacity: 0.4; cursor: default; }
+.anim-btn:disabled:hover { border-color: var(--border); background: var(--surface); }
+.anim-btn.primary { background: var(--accent); color: var(--bg); border-color: var(--accent); font-weight: 600; }
+.anim-btn.primary:hover { background: #79b8ff; }
+.anim-btn.primary:disabled { background: var(--accent); opacity: 0.4; }
+.anim-btn.primary:disabled:hover { background: var(--accent); }
+
+.example-selector {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+  justify-content: center;
+}
+.example-btn {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-family: var(--mono);
+  cursor: pointer;
+  transition: all .2s;
+}
+.example-btn:hover, .example-btn.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(88,166,255,.08);
+}
+
+/* Rule Hierarchy */
+.hierarchy {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 640px;
+  margin: 0 auto;
+}
+.hierarchy-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px 24px;
+  background: var(--surface);
+  border-radius: 12px;
+  border: 1px solid var(--border);
+}
+.hierarchy-item .priority {
+  font-size: 1.5rem;
+  font-weight: 700;
+  width: 40px;
+  text-align: center;
+  flex-shrink: 0;
+}
+.hierarchy-item .h-content h3 { font-size: 1rem; margin-bottom: 4px; }
+.hierarchy-item .h-content p { color: var(--text-muted); font-size: 0.85rem; }
+.hierarchy-item.deny-item { border-left: 3px solid var(--red); }
+.hierarchy-item.deny-item .priority { color: var(--red); }
+.hierarchy-item.ask-item { border-left: 3px solid var(--yellow); }
+.hierarchy-item.ask-item .priority { color: var(--yellow); }
+.hierarchy-item.allow-item { border-left: 3px solid var(--green); }
+.hierarchy-item.allow-item .priority { color: var(--green); }
+
+.hierarchy-arrow {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 1.2rem;
+}
+
+/* Config */
+.config-block {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.config-block .config-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+.config-block pre {
+  padding: 20px;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  line-height: 1.7;
+  overflow-x: auto;
+}
+.config-block .comment { color: var(--text-muted); }
+.config-block .key { color: var(--accent); }
+.config-block .val { color: var(--green); }
+
+/* Footer */
+footer {
+  text-align: center;
+  padding: 48px 24px;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  border-top: 1px solid var(--border);
+}
+
+/* Step indicator */
+.step-indicator {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+}
+.step-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border);
+  transition: background .3s;
+}
+.step-dot.active { background: var(--accent); }
+
+@media (max-width: 640px) {
+  .hero h1 { font-size: 2rem; }
+  .hero .tagline { font-size: 1rem; }
+  .pipeline-steps { grid-template-columns: 1fr; }
+  .split-cards { flex-direction: column; }
+  .install-box { font-size: 0.8rem; padding: 10px 14px; }
+  section { padding: 48px 0; }
+}
+</style>
+</head>
+<body>
+
+<!-- Hero -->
+<header class="hero">
+  <h1><span class="accent">Claude</span> Warden</h1>
+  <p class="tagline">Smart command safety filtering for Claude Code. Eliminates unnecessary permission prompts while blocking dangerous commands.</p>
+  <div class="install-box" onclick="copyInstall()" title="Click to copy">
+    <span class="prompt">$</span>
+    <span>claude plugin install claude-warden</span>
+    <span class="copy-hint">click to copy</span>
+  </div>
+</header>
+
+<!-- How It Works -->
+<section>
+  <div class="container">
+    <h2>How It Works</h2>
+    <p class="subtitle">Every Bash command Claude Code runs passes through Warden's parse-evaluate pipeline before execution.</p>
+    <div class="pipeline-steps">
+      <div class="pipeline-step">
+        <div class="step-num">1</div>
+        <h3>Intercept</h3>
+        <p>PreToolUse hook captures every Bash tool call before execution</p>
+      </div>
+      <div class="pipeline-step">
+        <div class="step-num">2</div>
+        <h3>Parse</h3>
+        <p>State-machine splitter breaks compound commands on pipes, chains, and semicolons</p>
+      </div>
+      <div class="pipeline-step">
+        <div class="step-num">3</div>
+        <h3>Evaluate</h3>
+        <p>Each command is checked against the rule hierarchy with argument-aware pattern matching</p>
+      </div>
+      <div class="pipeline-step">
+        <div class="step-num">4</div>
+        <h3>Decide</h3>
+        <p>Results combine: any deny &#8594; deny, any ask &#8594; ask, all allow &#8594; allow</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Interactive Animation -->
+<section class="animation-section">
+  <div class="container">
+    <h2>See It In Action</h2>
+    <p class="subtitle">Watch how Warden evaluates compound commands step by step. Click an example to begin.</p>
+
+    <div class="example-selector" id="exampleSelector"></div>
+
+    <div class="anim-container">
+      <div class="anim-toolbar">
+        <div class="dots"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
+        <div class="title">warden evaluation</div>
+      </div>
+      <div class="anim-body" id="animBody">
+        <div class="cmd-input" id="cmdInput"></div>
+        <div class="split-cards" id="splitCards"></div>
+        <div class="combine-logic" id="combineLogic"></div>
+        <div class="final-result" id="finalResult"></div>
+      </div>
+    </div>
+
+    <div class="anim-controls">
+      <button class="anim-btn" id="btnPrev" onclick="prevStep()" disabled>&#8592; Back</button>
+      <div class="step-indicator" id="stepIndicator"></div>
+      <button class="anim-btn primary" id="btnNext" onclick="nextStep()">Next &#8594;</button>
+    </div>
+  </div>
+</section>
+
+<!-- Rule Hierarchy -->
+<section>
+  <div class="container">
+    <h2>Rule Hierarchy</h2>
+    <p class="subtitle">Warden evaluates commands using a strict priority order. Higher-priority rules always win.</p>
+    <div class="hierarchy">
+      <div class="hierarchy-item deny-item">
+        <div class="priority">1</div>
+        <div class="h-content">
+          <h3>Global Deny Patterns</h3>
+          <p>Catch-all patterns like <code>rm -rf /</code>, <code>sudo</code>, <code>shutdown</code> are blocked instantly regardless of other rules.</p>
+        </div>
+      </div>
+      <div class="hierarchy-arrow">&#8595;</div>
+      <div class="hierarchy-item deny-item">
+        <div class="priority">2</div>
+        <div class="h-content">
+          <h3>alwaysDeny Commands</h3>
+          <p>Commands explicitly marked as always denied in config, like <code>mkfs</code>, <code>dd</code>, <code>:(){ :|:&amp; };:</code></p>
+        </div>
+      </div>
+      <div class="hierarchy-arrow">&#8595;</div>
+      <div class="hierarchy-item allow-item">
+        <div class="priority">3</div>
+        <div class="h-content">
+          <h3>alwaysAllow Commands</h3>
+          <p>Safe commands like <code>cat</code>, <code>ls</code>, <code>grep</code>, <code>echo</code> are allowed without prompting.</p>
+        </div>
+      </div>
+      <div class="hierarchy-arrow">&#8595;</div>
+      <div class="hierarchy-item ask-item">
+        <div class="priority">4</div>
+        <div class="h-content">
+          <h3>Command-Specific Rules</h3>
+          <p>Argument-aware patterns: <code>git push</code> prompts, but <code>git status</code> is auto-allowed. <code>npm publish</code> prompts, but <code>npm test</code> is allowed.</p>
+        </div>
+      </div>
+      <div class="hierarchy-arrow">&#8595;</div>
+      <div class="hierarchy-item ask-item">
+        <div class="priority">5</div>
+        <div class="h-content">
+          <h3>Default Decision</h3>
+          <p>If no rule matches, the default decision applies (configurable, defaults to <code>ask</code>).</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Configuration -->
+<section>
+  <div class="container">
+    <h2>Configuration</h2>
+    <p class="subtitle">Customize rules in <code>~/.claude/warden.yaml</code> (user) or <code>.claude/warden.yaml</code> (project). User rules override defaults by command name.</p>
+    <div class="config-block">
+      <div class="config-header">~/.claude/warden.yaml</div>
+<pre><span class="comment"># Commands always allowed without prompting</span>
+<span class="key">alwaysAllow</span>:
+  - <span class="val">cat</span>
+  - <span class="val">ls</span>
+  - <span class="val">grep</span>
+  - <span class="val">echo</span>
+  - <span class="val">wc</span>
+
+<span class="comment"># Commands always denied</span>
+<span class="key">alwaysDeny</span>:
+  - <span class="val">sudo</span>
+  - <span class="val">shutdown</span>
+  - <span class="val">reboot</span>
+
+<span class="comment"># Command-specific rules with argument patterns</span>
+<span class="key">commands</span>:
+  <span class="key">git</span>:
+    <span class="key">default</span>: <span class="val">allow</span>
+    <span class="key">args</span>:
+      - <span class="key">match</span>: { <span class="key">anyArgMatches</span>: [<span class="val">"^(push|force-push)$"</span>] }
+        <span class="key">decision</span>: <span class="val">ask</span>
+      - <span class="key">match</span>: { <span class="key">anyArgMatches</span>: [<span class="val">"^reset$"</span>] }
+        <span class="key">decision</span>: <span class="val">ask</span>
+
+<span class="comment"># Trusted contexts for context-aware filtering</span>
+<span class="key">trustedSSHHosts</span>:
+  - <span class="val">dev-server.local</span>
+<span class="key">trustedDockerContainers</span>:
+  - <span class="val">my-dev-container</span></pre>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <p>Claude Warden &middot; <a href="https://github.com/banyudu/claude-warden">GitHub</a> &middot; MIT License</p>
+</footer>
+
+<script>
+var EXAMPLES = [
+  {
+    label: 'safe pipeline',
+    input: 'cat file.txt | grep pattern | wc -l',
+    parts: [
+      { cmd: 'cat file.txt', op: '|', decision: 'allow', rule: 'alwaysAllow' },
+      { cmd: 'grep pattern', op: '|', decision: 'allow', rule: 'alwaysAllow' },
+      { cmd: 'wc -l', op: null, decision: 'allow', rule: 'alwaysAllow' }
+    ],
+    combine: 'all allow \u2192 allow',
+    final: 'allow'
+  },
+  {
+    label: 'dangerous chain',
+    input: 'npm run build && rm -rf /',
+    parts: [
+      { cmd: 'npm run build', op: '&&', decision: 'allow', rule: 'safe pkg cmd' },
+      { cmd: 'rm -rf /', op: null, decision: 'deny', rule: 'global deny pattern' }
+    ],
+    combine: 'any deny \u2192 deny',
+    final: 'deny'
+  },
+  {
+    label: 'mixed permissions',
+    input: 'git status && git push origin main',
+    parts: [
+      { cmd: 'git status', op: '&&', decision: 'allow', rule: 'git: safe subcommand' },
+      { cmd: 'git push origin main', op: null, decision: 'ask', rule: 'git push \u2192 ask' }
+    ],
+    combine: 'any ask \u2192 ask',
+    final: 'ask'
+  },
+  {
+    label: 'dev workflow',
+    input: 'pnpm run test && pnpm run build; echo done',
+    parts: [
+      { cmd: 'pnpm run test', op: '&&', decision: 'allow', rule: 'safe pkg cmd' },
+      { cmd: 'pnpm run build', op: ';', decision: 'allow', rule: 'safe pkg cmd' },
+      { cmd: 'echo done', op: null, decision: 'allow', rule: 'alwaysAllow' }
+    ],
+    combine: 'all allow \u2192 allow',
+    final: 'allow'
+  }
+];
+
+var currentExample = 0;
+var currentStep = 0;
+var TOTAL_STEPS = 4;
+
+function escapeHtml(str) {
+  var div = document.createElement('div');
+  div.appendChild(document.createTextNode(str));
+  return div.innerHTML;
+}
+
+function initExamples() {
+  var sel = document.getElementById('exampleSelector');
+  var html = '';
+  for (var i = 0; i < EXAMPLES.length; i++) {
+    html += '<button class="example-btn' + (i === 0 ? ' active' : '') + '" data-idx="' + i + '">' + escapeHtml(EXAMPLES[i].label) + '</button>';
+  }
+  sel.innerHTML = html;
+  sel.addEventListener('click', function(e) {
+    var btn = e.target.closest('.example-btn');
+    if (btn) selectExample(parseInt(btn.dataset.idx, 10));
+  });
+}
+
+function selectExample(idx) {
+  currentExample = idx;
+  currentStep = 0;
+  var btns = document.querySelectorAll('.example-btn');
+  for (var i = 0; i < btns.length; i++) {
+    btns[i].classList.toggle('active', i === idx);
+  }
+  render();
+}
+
+function renderStepIndicator() {
+  var el = document.getElementById('stepIndicator');
+  var html = '';
+  for (var i = 0; i < TOTAL_STEPS; i++) {
+    html += '<div class="step-dot' + (i <= currentStep ? ' active' : '') + '"></div>';
+  }
+  el.innerHTML = html;
+}
+
+function renderCommandInput(ex) {
+  var el = document.getElementById('cmdInput');
+  var operators = { '|': true, '&&': true, '||': true, ';': true };
+  var tokens = ex.input.split(/(\s*(?:\|\||&&|[|;])\s*)/);
+  var html = '<span class="prompt-char">$</span>';
+  for (var i = 0; i < tokens.length; i++) {
+    var trimmed = tokens[i].trim();
+    if (operators[trimmed]) {
+      html += '<span class="operator">' + escapeHtml(tokens[i]) + '</span>';
+    } else {
+      html += escapeHtml(tokens[i]);
+    }
+  }
+  el.innerHTML = html;
+}
+
+function renderSplitCards(ex) {
+  var container = document.getElementById('splitCards');
+  if (currentStep < 1) {
+    container.innerHTML = '';
+    return;
+  }
+
+  var html = '';
+  for (var i = 0; i < ex.parts.length; i++) {
+    var p = ex.parts[i];
+    var badge = '';
+    if (currentStep >= 2) {
+      badge = '<div class="decision-badge ' + p.decision + ' visible">' + escapeHtml(p.decision) + '</div>' +
+        '<div style="font-family:var(--sans);font-size:0.7rem;color:var(--text-muted);margin-top:4px">' + escapeHtml(p.rule) + '</div>';
+    }
+    var opHtml = p.op ? '<div class="card-op">' + escapeHtml(p.op) + '</div>' : '';
+    html += '<div class="split-card visible" style="transition-delay:' + (i * 100) + 'ms">' +
+      '<div class="card-label">Command ' + (i + 1) + '</div>' +
+      '<div>' + escapeHtml(p.cmd) + '</div>' +
+      opHtml + badge + '</div>';
+  }
+  container.innerHTML = html;
+}
+
+function renderCombine(ex) {
+  var logic = document.getElementById('combineLogic');
+  var result = document.getElementById('finalResult');
+
+  if (currentStep < 3) {
+    logic.className = 'combine-logic';
+    logic.textContent = '';
+    result.className = 'final-result';
+    result.textContent = '';
+    return;
+  }
+
+  logic.textContent = '';
+  var prefix = document.createTextNode('Combine rule: ');
+  var code = document.createElement('code');
+  code.textContent = ex.combine;
+  logic.appendChild(prefix);
+  logic.appendChild(code);
+  logic.className = 'combine-logic visible';
+
+  var labels = { allow: 'ALLOWED', deny: 'DENIED', ask: 'ASK USER' };
+  result.textContent = labels[ex.final];
+  result.className = 'final-result ' + ex.final + ' visible';
+}
+
+function render() {
+  var ex = EXAMPLES[currentExample];
+
+  document.getElementById('btnPrev').disabled = currentStep === 0;
+  var btnNext = document.getElementById('btnNext');
+  btnNext.disabled = currentStep >= TOTAL_STEPS - 1;
+
+  renderStepIndicator();
+  renderCommandInput(ex);
+  renderSplitCards(ex);
+  renderCombine(ex);
+}
+
+function nextStep() {
+  if (currentStep < TOTAL_STEPS - 1) { currentStep++; render(); }
+}
+function prevStep() {
+  if (currentStep > 0) { currentStep--; render(); }
+}
+
+function copyInstall() {
+  navigator.clipboard.writeText('claude plugin install claude-warden').then(function() {
+    var box = document.querySelector('.install-box .copy-hint');
+    box.textContent = 'copied!';
+    setTimeout(function() { box.textContent = 'click to copy'; }, 1500);
+  });
+}
+
+initExamples();
+render();
+</script>
+</body>
+</html>
