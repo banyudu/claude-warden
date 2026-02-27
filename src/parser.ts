@@ -60,6 +60,17 @@ interface WalkResult {
 
 const HEREDOC_REGEX = /<<-?\s*['"]?\w+['"]?/;
 
+/**
+ * Replace $(cat <<MARKER...MARKER) patterns with a placeholder string.
+ * This handles the common idiom of passing multi-line text via heredoc,
+ * which is just string interpolation — not arbitrary command execution.
+ */
+function preprocessCatHeredocs(input: string): string {
+  // Match $(cat <<[-]?['"]?MARKER['"]?\n...MARKER\n) patterns
+  const regex = /\$\(cat\s+<<-?\s*['"]?(\w+)['"]?\n([\s\S]*?)\n\1\s*\)/g;
+  return input.replace(regex, '__HEREDOC_TEXT__');
+}
+
 function convertCommand(node: CommandNode): ParsedCommand | null {
   if (!node.name) return null;
 
@@ -221,6 +232,11 @@ export function parseCommand(input: string): ParseResult {
   if (!input || !input.trim()) {
     return { commands: [], hasSubshell: false, subshellCommands: [], parseError: false };
   }
+
+  // Preprocess $(cat <<MARKER...MARKER) patterns — these are just multi-line
+  // string interpolation, not arbitrary subshells. Replace with placeholder text
+  // so the parser sees clean commands (e.g. `gh pr create --body "__HEREDOC_TEXT__"`).
+  input = preprocessCatHeredocs(input);
 
   // Detect heredocs before parsing — bash-parser misparses heredoc body as commands.
   // Pre-strip heredoc content and only parse the command portion.

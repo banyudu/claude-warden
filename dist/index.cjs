@@ -18139,6 +18139,10 @@ var require_dist2 = __commonJS({
 var import_bash_parser = __toESM(require_src(), 1);
 var import_path = require("path");
 var HEREDOC_REGEX = /<<-?\s*['"]?\w+['"]?/;
+function preprocessCatHeredocs(input) {
+  const regex = /\$\(cat\s+<<-?\s*['"]?(\w+)['"]?\n([\s\S]*?)\n\1\s*\)/g;
+  return input.replace(regex, "__HEREDOC_TEXT__");
+}
 function convertCommand(node) {
   if (!node.name) return null;
   const command = node.name.text.includes("/") ? (0, import_path.basename)(node.name.text) : node.name.text;
@@ -18258,6 +18262,7 @@ function parseCommand(input) {
   if (!input || !input.trim()) {
     return { commands: [], hasSubshell: false, subshellCommands: [], parseError: false };
   }
+  input = preprocessCatHeredocs(input);
   const hasHeredoc = HEREDOC_REGEX.test(input);
   if (hasHeredoc) {
     const firstLine = input.split("\n")[0];
@@ -18784,6 +18789,144 @@ var import_os = require("os");
 var import_path2 = require("path");
 
 // src/defaults.ts
+var SAFE_DEV_TOOLS = [
+  "jest",
+  "vitest",
+  "tsc",
+  "eslint",
+  "prettier",
+  "mkdirp",
+  "concurrently",
+  "turbo",
+  "next",
+  "nuxt",
+  "vite",
+  "astro",
+  "playwright",
+  "cypress",
+  "mocha",
+  "nyc",
+  "c8",
+  "ts-jest",
+  "tsup",
+  "esbuild",
+  "rollup",
+  "webpack",
+  "prisma",
+  "drizzle-kit",
+  "typeorm",
+  "knex",
+  "sequelize-cli",
+  "tailwindcss",
+  "postcss",
+  "autoprefixer",
+  "lint-staged",
+  "husky",
+  "changeset",
+  "semantic-release",
+  "lerna",
+  "nx",
+  "create-react-app",
+  "create-next-app",
+  "create-vite",
+  "degit",
+  "storybook",
+  "wrangler",
+  "netlify",
+  "vercel",
+  "json"
+];
+var SCRIPT_RUNNERS = ["tsx", "ts-node", "nodemon"];
+var REGISTRY_OPS = ["publish", "unpublish", "deprecate", "owner", "access", "token", "adduser", "login", "logout"];
+var SAFE_PKG_MANAGER_CMDS = [
+  "install",
+  "add",
+  "remove",
+  "uninstall",
+  "update",
+  "upgrade",
+  "outdated",
+  "ls",
+  "list",
+  "run",
+  "test",
+  "start",
+  "build",
+  "init",
+  "create",
+  "info",
+  "view",
+  "show",
+  "why",
+  "pack",
+  "cache",
+  "config",
+  "get",
+  "set",
+  "version",
+  "help",
+  "exec",
+  "dedupe",
+  "prune",
+  "audit",
+  "completion"
+];
+var VERSION_HELP_FLAGS = {
+  match: { anyArgMatches: ["^--(version|help)$", "^-[vh]$"] },
+  decision: "allow",
+  description: "Version/help flags"
+};
+function anyArgMatchesPattern(items) {
+  return `^(${items.join("|")})$`;
+}
+function safeDevToolsPattern() {
+  return {
+    match: { anyArgMatches: [anyArgMatchesPattern(SAFE_DEV_TOOLS)] },
+    decision: "allow",
+    description: "Well-known dev tools"
+  };
+}
+function scriptRunnersPattern() {
+  return {
+    match: { anyArgMatches: [anyArgMatchesPattern(SCRIPT_RUNNERS)] },
+    decision: "ask",
+    reason: "Script runners can execute arbitrary code"
+  };
+}
+function registryOpsPattern() {
+  return {
+    match: { anyArgMatches: [anyArgMatchesPattern(REGISTRY_OPS)] },
+    decision: "ask",
+    reason: "Registry modification"
+  };
+}
+function pkgManagerRule(command, extraSafeCmds = []) {
+  const safeCmds = [...SAFE_PKG_MANAGER_CMDS, ...extraSafeCmds];
+  return {
+    command,
+    default: "ask",
+    argPatterns: [
+      registryOpsPattern(),
+      {
+        match: { anyArgMatches: [anyArgMatchesPattern(safeCmds)] },
+        decision: "allow",
+        description: `Standard ${command} commands`
+      },
+      VERSION_HELP_FLAGS
+    ]
+  };
+}
+function pkgRunnerRule(command) {
+  return {
+    command,
+    default: "ask",
+    argPatterns: [
+      safeDevToolsPattern(),
+      scriptRunnersPattern(),
+      VERSION_HELP_FLAGS
+    ]
+  };
+}
 var DEFAULT_CONFIG = {
   defaultDecision: "ask",
   askOnSubshell: true,
@@ -18945,27 +19088,13 @@ var DEFAULT_CONFIG = {
         ]
       },
       // --- Shell interpreters ---
-      {
-        command: "bash",
+      ...["bash", "sh", "zsh"].map((cmd) => ({
+        command: cmd,
         default: "ask",
         argPatterns: [
           { match: { anyArgMatches: ["^--(version|help)$"] }, decision: "allow", description: "Version/help flags" }
         ]
-      },
-      {
-        command: "sh",
-        default: "ask",
-        argPatterns: [
-          { match: { anyArgMatches: ["^--(version|help)$"] }, decision: "allow", description: "Version/help flags" }
-        ]
-      },
-      {
-        command: "zsh",
-        default: "ask",
-        argPatterns: [
-          { match: { anyArgMatches: ["^--(version|help)$"] }, decision: "allow", description: "Version/help flags" }
-        ]
-      },
+      })),
       // --- Node.js ecosystem ---
       {
         command: "node",
@@ -18976,74 +19105,32 @@ var DEFAULT_CONFIG = {
           { match: { noArgs: true }, decision: "ask", reason: "Interactive REPL" }
         ]
       },
-      {
-        command: "npx",
-        default: "ask",
-        argPatterns: [
-          {
-            match: { anyArgMatches: ["^(jest|vitest|tsx|ts-node|tsc|eslint|prettier|mkdirp|concurrently|turbo|next|nuxt|vite|astro|playwright|cypress|mocha|nyc|c8|nodemon|ts-jest|tsup|esbuild|rollup|webpack|prisma|drizzle-kit|typeorm|knex|sequelize-cli|tailwindcss|postcss|autoprefixer|lint-staged|husky|changeset|semantic-release|lerna|nx|create-react-app|create-next-app|create-vite|degit|storybook|wrangler|netlify|vercel|json)$"] },
-            decision: "allow",
-            description: "Well-known dev tools"
-          },
-          { match: { anyArgMatches: ["^--(version|help)$", "^-[vh]$"] }, decision: "allow", description: "Version/help flags" }
-        ]
-      },
-      {
-        command: "bunx",
-        default: "ask",
-        argPatterns: [
-          {
-            match: { anyArgMatches: ["^(jest|vitest|tsx|ts-node|tsc|eslint|prettier|mkdirp|concurrently|turbo|next|nuxt|vite|astro|playwright|cypress|mocha|nyc|c8|nodemon|ts-jest|tsup|esbuild|rollup|webpack|prisma|drizzle-kit|typeorm|knex|sequelize-cli|tailwindcss|postcss|autoprefixer|lint-staged|husky|changeset|semantic-release|lerna|nx|create-react-app|create-next-app|create-vite|degit|storybook|wrangler|netlify|vercel|json)$"] },
-            decision: "allow",
-            description: "Well-known dev tools"
-          },
-          { match: { anyArgMatches: ["^--(version|help)$", "^-[vh]$"] }, decision: "allow", description: "Version/help flags" }
-        ]
-      },
-      {
-        command: "npm",
-        default: "allow",
-        argPatterns: [
-          { match: { anyArgMatches: ["^(publish|unpublish|deprecate|owner|access|token|adduser|login)$"] }, decision: "ask", reason: "Registry modification" }
-        ]
-      },
-      {
-        command: "pnpm",
-        default: "allow",
-        argPatterns: [
-          { match: { anyArgMatches: ["^(publish|unpublish|deprecate|owner|access|token|adduser|login)$"] }, decision: "ask", reason: "Registry modification" }
-        ]
-      },
-      {
-        command: "yarn",
-        default: "allow",
-        argPatterns: [
-          { match: { anyArgMatches: ["^(publish|unpublish|owner|access|token|login|logout)$"] }, decision: "ask", reason: "Registry modification" }
-        ]
-      },
+      // npx / bunx — package runners
+      pkgRunnerRule("npx"),
+      pkgRunnerRule("bunx"),
+      // npm / pnpm / yarn — package managers
+      pkgManagerRule("npm", ["ci", "search", "explain", "prefix", "root", "fund", "doctor", "diff", "pkg", "query", "shrinkwrap"]),
+      pkgManagerRule("pnpm", ["store", "fetch", "doctor", "patch"]),
+      pkgManagerRule("yarn", ["up", "dlx", "workspaces"]),
+      // bun — runtime + package manager
       {
         command: "bun",
         default: "ask",
         argPatterns: [
-          { match: { anyArgMatches: ["^(install|add|remove|run|test|build|init|create|pm|x|upgrade|link|unlink)$"] }, decision: "allow", description: "Standard bun commands" },
-          { match: { anyArgMatches: ["^--(version|help)$"] }, decision: "allow" }
+          { match: { anyArgMatches: [anyArgMatchesPattern([...SAFE_PKG_MANAGER_CMDS, "ci", "pm", "x", "link", "unlink"])] }, decision: "allow", description: "Standard bun commands" },
+          safeDevToolsPattern(),
+          scriptRunnersPattern(),
+          VERSION_HELP_FLAGS
         ]
       },
       // --- Python ---
-      {
-        command: "python",
+      ...["python", "python3"].map((cmd) => ({
+        command: cmd,
         default: "ask",
         argPatterns: [
           { match: { anyArgMatches: ["^--(version|help)$", "^-V$"] }, decision: "allow" }
         ]
-      },
-      {
-        command: "python3",
-        default: "ask",
-        argPatterns: [
-          { match: { anyArgMatches: ["^--(version|help)$", "^-V$"] }, decision: "allow" }
-        ]
-      },
+      })),
       { command: "pip", default: "allow" },
       { command: "pip3", default: "allow" },
       {

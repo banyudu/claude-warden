@@ -172,4 +172,27 @@ describe('parseCommand', () => {
     const result = parseCommand('if then else fi ;;; <<<');
     expect(result.parseError).toBe(true);
   });
+
+  it('handles $(cat <<EOF) as string interpolation, not subshell', () => {
+    const result = parseCommand('gh pr create --title "test" --body "$(cat <<\'EOF\'\ntest body\nEOF\n)"');
+    expect(result.parseError).toBe(false);
+    expect(result.hasSubshell).toBe(false);
+    expect(result.commands).toHaveLength(1);
+    expect(result.commands[0].command).toBe('gh');
+  });
+
+  it('handles $(cat <<EOF) without quotes on marker', () => {
+    const result = parseCommand('git commit -m "$(cat <<EOF\ncommit message\nEOF\n)"');
+    expect(result.parseError).toBe(false);
+    expect(result.hasSubshell).toBe(false);
+    expect(result.commands).toHaveLength(1);
+    expect(result.commands[0].command).toBe('git');
+  });
+
+  it('still flags bare heredocs (without cat subshell) as complex', () => {
+    const result = parseCommand('cat <<EOF\nhello\nEOF');
+    expect(result.hasSubshell).toBe(true);
+    expect(result.commands.length).toBeGreaterThanOrEqual(1);
+    expect(result.commands[0].command).toBe('cat');
+  });
 });
