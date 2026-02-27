@@ -18258,37 +18258,78 @@ function walkNode(node, result) {
       break;
   }
 }
+function hasHeredocRedirect(node) {
+  if (!node.suffix) return false;
+  return node.suffix.some((s) => s.type === "dless" || s.type === "dlessdash");
+}
+function astHasHeredoc(ast) {
+  function check(node) {
+    if (node.type === "Command") {
+      if (hasHeredocRedirect(node)) return true;
+    }
+    for (const [key, value] of Object.entries(node)) {
+      if (key === "commandAST" || key === "expansion") continue;
+      if (Array.isArray(value)) {
+        for (const child of value) {
+          if (child && typeof child === "object" && "type" in child && check(child)) return true;
+        }
+      } else if (value && typeof value === "object" && "type" in value) {
+        if (check(value)) return true;
+      }
+    }
+    return false;
+  }
+  for (const cmd of ast.commands) {
+    if (check(cmd)) return true;
+  }
+  return false;
+}
 function parseCommand(input) {
   if (!input || !input.trim()) {
     return { commands: [], hasSubshell: false, subshellCommands: [], parseError: false };
   }
   input = preprocessCatHeredocs(input);
-  const hasHeredoc = HEREDOC_REGEX.test(input);
-  if (hasHeredoc) {
-    const firstLine = input.split("\n")[0];
-    const cmdPart = firstLine.replace(/<<-?\s*['"]?\w+['"]?.*$/, "").trim();
-    if (!cmdPart) {
-      return { commands: [], hasSubshell: false, subshellCommands: [], parseError: true };
-    }
-    try {
-      const ast = (0, import_bash_parser.default)(cmdPart);
-      const result = { commands: [], hasSubshell: false, subshellCommands: [] };
-      for (const cmd of ast.commands) {
-        walkNode(cmd, result);
-      }
-      return { commands: result.commands, hasSubshell: true, subshellCommands: result.subshellCommands, parseError: false };
-    } catch {
-      return { commands: [], hasSubshell: true, subshellCommands: [], parseError: true };
-    }
-  }
   try {
     const ast = (0, import_bash_parser.default)(input);
     const result = { commands: [], hasSubshell: false, subshellCommands: [] };
+    if (astHasHeredoc(ast)) {
+      const firstLine = input.split("\n")[0];
+      const cmdPart = firstLine.replace(/<<-?\s*['"]?\w+['"]?.*$/, "").trim();
+      if (!cmdPart) {
+        return { commands: [], hasSubshell: false, subshellCommands: [], parseError: true };
+      }
+      try {
+        const cmdAst = (0, import_bash_parser.default)(cmdPart);
+        for (const cmd of cmdAst.commands) {
+          walkNode(cmd, result);
+        }
+        return { commands: result.commands, hasSubshell: true, subshellCommands: result.subshellCommands, parseError: false };
+      } catch {
+        return { commands: [], hasSubshell: true, subshellCommands: [], parseError: true };
+      }
+    }
     for (const cmd of ast.commands) {
       walkNode(cmd, result);
     }
     return { commands: result.commands, hasSubshell: result.hasSubshell, subshellCommands: result.subshellCommands, parseError: false };
   } catch {
+    if (HEREDOC_REGEX.test(input)) {
+      const firstLine = input.split("\n")[0];
+      const cmdPart = firstLine.replace(/<<-?\s*['"]?\w+['"]?.*$/, "").trim();
+      if (!cmdPart) {
+        return { commands: [], hasSubshell: true, subshellCommands: [], parseError: true };
+      }
+      try {
+        const ast = (0, import_bash_parser.default)(cmdPart);
+        const result = { commands: [], hasSubshell: false, subshellCommands: [] };
+        for (const cmd of ast.commands) {
+          walkNode(cmd, result);
+        }
+        return { commands: result.commands, hasSubshell: true, subshellCommands: result.subshellCommands, parseError: false };
+      } catch {
+        return { commands: [], hasSubshell: true, subshellCommands: [], parseError: true };
+      }
+    }
     return { commands: [], hasSubshell: false, subshellCommands: [], parseError: true };
   }
 }
