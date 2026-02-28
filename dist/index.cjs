@@ -18904,7 +18904,8 @@ var SAFE_PKG_MANAGER_CMDS = [
   "dedupe",
   "prune",
   "audit",
-  "completion"
+  "completion",
+  "whoami"
 ];
 var VERSION_HELP_FLAGS = {
   match: { anyArgMatches: ["^--(version|help)$", "^-[vh]$"] },

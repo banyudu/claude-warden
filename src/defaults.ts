@@ -21,7 +21,7 @@ const SAFE_PKG_MANAGER_CMDS = [
   'install', 'add', 'remove', 'uninstall', 'update', 'upgrade', 'outdated',
   'ls', 'list', 'run', 'test', 'start', 'build', 'init', 'create',
   'info', 'view', 'show', 'why', 'pack', 'cache', 'config', 'get', 'set',
-  'version', 'help', 'exec', 'dedupe', 'prune', 'audit', 'completion',
+  'version', 'help', 'exec', 'dedupe', 'prune', 'audit', 'completion', 'whoami',
 ];
 
 const VERSION_HELP_FLAGS: ArgPattern = {
