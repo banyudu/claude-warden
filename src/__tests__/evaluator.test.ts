@@ -415,6 +415,26 @@ describe('evaluator', () => {
     it('skips docker exec flags with values', () => {
       expect(evalWith('docker exec -e FOO=bar -u root my-app cat /etc/hosts', { trustedDockerContainers: containers }).decision).toBe('allow');
     });
+
+    it('allows bare bash on trusted container (interactive shell)', () => {
+      expect(evalWith('docker exec -it my-app bash', { trustedDockerContainers: containers }).decision).toBe('allow');
+    });
+
+    it('allows bare sh on trusted container (interactive shell)', () => {
+      expect(evalWith('docker exec my-app sh', { trustedDockerContainers: containers }).decision).toBe('allow');
+    });
+
+    it('allows bash -c with safe command on trusted container', () => {
+      expect(evalWith('docker exec my-app bash -c "ls -la"', { trustedDockerContainers: containers }).decision).toBe('allow');
+    });
+
+    it('denies bash -c with dangerous command on trusted container', () => {
+      expect(evalWith('docker exec my-app bash -c "sudo rm -rf /"', { trustedDockerContainers: containers }).decision).toBe('deny');
+    });
+
+    it('allows bash -c with piped safe commands on trusted container', () => {
+      expect(evalWith(`docker exec my-app bash -c 'tail -100 /tmp/app.log | grep error | tail -20'`, { trustedDockerContainers: containers }).decision).toBe('allow');
+    });
   });
 
   describe('kubectl context whitelisting', () => {
@@ -454,6 +474,26 @@ describe('evaluator', () => {
 
     it('handles namespace and container flags', () => {
       expect(evalWith('kubectl exec --context minikube -n default -c app my-pod -- cat /tmp/log', { trustedKubectlContexts: contexts }).decision).toBe('allow');
+    });
+
+    it('allows bare bash on trusted context (interactive shell)', () => {
+      expect(evalWith('kubectl exec --context minikube my-pod -- bash', { trustedKubectlContexts: contexts }).decision).toBe('allow');
+    });
+
+    it('allows bare sh on trusted context (interactive shell)', () => {
+      expect(evalWith('kubectl exec --context minikube my-pod -- sh', { trustedKubectlContexts: contexts }).decision).toBe('allow');
+    });
+
+    it('allows bash -c with safe command on trusted context', () => {
+      expect(evalWith('kubectl exec --context minikube my-pod -- bash -c "ls -la"', { trustedKubectlContexts: contexts }).decision).toBe('allow');
+    });
+
+    it('denies bash -c with dangerous command on trusted context', () => {
+      expect(evalWith('kubectl exec --context minikube my-pod -- bash -c "sudo rm -rf /"', { trustedKubectlContexts: contexts }).decision).toBe('deny');
+    });
+
+    it('allows bash -c with piped safe commands on trusted context', () => {
+      expect(evalWith(`kubectl exec --context minikube my-pod -- bash -c 'tail -100 /tmp/app.log | grep error | tail -20'`, { trustedKubectlContexts: contexts }).decision).toBe('allow');
     });
   });
 
@@ -502,6 +542,26 @@ describe('evaluator', () => {
 
     it('recursively evaluates ask-level remote commands', () => {
       expect(evalWith('sprite exec -s my-sprite node script.js', { trustedSprites: sprites }).decision).toBe('ask');
+    });
+
+    it('allows bare bash on trusted sprite (interactive shell)', () => {
+      expect(evalWith('sprite exec -s my-sprite bash', { trustedSprites: sprites }).decision).toBe('allow');
+    });
+
+    it('allows bare sh on trusted sprite (interactive shell)', () => {
+      expect(evalWith('sprite exec -s my-sprite sh', { trustedSprites: sprites }).decision).toBe('allow');
+    });
+
+    it('allows bash -c with safe command on trusted sprite', () => {
+      expect(evalWith('sprite exec -s my-sprite bash -c "ls -la"', { trustedSprites: sprites }).decision).toBe('allow');
+    });
+
+    it('denies bash -c with dangerous command on trusted sprite', () => {
+      expect(evalWith('sprite exec -s my-sprite bash -c "sudo rm -rf /"', { trustedSprites: sprites }).decision).toBe('deny');
+    });
+
+    it('allows bash -c with piped safe commands on trusted sprite', () => {
+      expect(evalWith(`sprite exec -s my-sprite bash -c 'tail -100 /tmp/app.log | grep error | tail -20'`, { trustedSprites: sprites }).decision).toBe('allow');
     });
   });
 });

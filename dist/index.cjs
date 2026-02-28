@@ -18602,6 +18602,27 @@ var DOCKER_EXEC_FLAGS_WITH_VALUE = /* @__PURE__ */ new Set([
   "--workdir",
   "--detach-keys"
 ]);
+var INTERACTIVE_SHELLS = /* @__PURE__ */ new Set(["bash", "sh", "zsh"]);
+function evaluateRemoteCommand(remoteArgs, config) {
+  if (remoteArgs.length === 0) {
+    return { decision: "allow", reason: "interactive", details: [] };
+  }
+  const remoteCmd = remoteArgs[0];
+  if (INTERACTIVE_SHELLS.has(remoteCmd) && remoteArgs.length === 1) {
+    return { decision: "allow", reason: "interactive shell", details: [] };
+  }
+  if (INTERACTIVE_SHELLS.has(remoteCmd) && remoteArgs[1] === "-c" && remoteArgs.length >= 3) {
+    const innerCommand = remoteArgs.slice(2).join(" ");
+    const parsed2 = parseCommand(innerCommand);
+    return evaluate(parsed2, config);
+  }
+  const parsed = {
+    commands: [{ command: remoteCmd, args: remoteArgs.slice(1) }],
+    hasSubshell: false,
+    subshellCommands: []
+  };
+  return evaluate(parsed, config);
+}
 function parseDockerExecArgs(args2) {
   let target = null;
   const remoteArgs = [];
@@ -18627,29 +18648,19 @@ function parseDockerExecArgs(args2) {
     }
     i++;
   }
-  return { target, remoteCommand: remoteArgs.length > 0 ? remoteArgs.join(" ") : null };
+  return { target, remoteArgs };
 }
 function evaluateDockerExec(cmd, config) {
   const { command, args: args2 } = cmd;
   if (args2[0] !== "exec") return null;
-  const { target, remoteCommand } = parseDockerExecArgs(args2.slice(1));
+  const { target, remoteArgs } = parseDockerExecArgs(args2.slice(1));
   if (!target || !matchesPattern(target, config.trustedDockerContainers || [])) return null;
-  if (!remoteCommand) {
-    return {
-      command,
-      args: args2,
-      decision: "allow",
-      reason: `Trusted Docker container "${target}" (interactive)`,
-      matchedRule: "trustedDockerContainers"
-    };
-  }
-  const parsed = parseCommand(remoteCommand);
-  const result = evaluate(parsed, config);
+  const result = evaluateRemoteCommand(remoteArgs, config);
   return {
     command,
     args: args2,
     decision: result.decision,
-    reason: `Trusted Docker container "${target}": ${result.reason}`,
+    reason: `Trusted Docker container "${target}" (${result.reason})`,
     matchedRule: "trustedDockerContainers"
   };
 }
@@ -18684,11 +18695,9 @@ function parseKubectlExecArgs(args2) {
   let pod = null;
   const remoteArgs = [];
   let i = 0;
-  let pastSeparator = false;
   while (i < args2.length) {
     const arg = args2[i];
     if (arg === "--") {
-      pastSeparator = true;
       i++;
       while (i < args2.length) {
         remoteArgs.push(args2[i]);
@@ -18717,30 +18726,20 @@ function parseKubectlExecArgs(args2) {
     }
     i++;
   }
-  return { context, pod, remoteCommand: remoteArgs.length > 0 ? remoteArgs.join(" ") : null };
+  return { context, pod, remoteArgs };
 }
 function evaluateKubectlExec(cmd, config) {
   const { command, args: args2 } = cmd;
   if (args2[0] !== "exec") return null;
-  const { context, pod, remoteCommand } = parseKubectlExecArgs(args2.slice(1));
+  const { context, pod, remoteArgs } = parseKubectlExecArgs(args2.slice(1));
   const trustedContexts = config.trustedKubectlContexts || [];
   if (!context || !matchesPattern(context, trustedContexts)) return null;
-  if (!remoteCommand) {
-    return {
-      command,
-      args: args2,
-      decision: "allow",
-      reason: `Trusted kubectl context "${context}"${pod ? `, pod "${pod}"` : ""} (interactive)`,
-      matchedRule: "trustedKubectlContexts"
-    };
-  }
-  const parsed = parseCommand(remoteCommand);
-  const result = evaluate(parsed, config);
+  const result = evaluateRemoteCommand(remoteArgs, config);
   return {
     command,
     args: args2,
     decision: result.decision,
-    reason: `Trusted kubectl context "${context}": ${result.reason}`,
+    reason: `Trusted kubectl context "${context}"${pod ? `, pod "${pod}"` : ""} (${result.reason})`,
     matchedRule: "trustedKubectlContexts"
   };
 }
@@ -18785,7 +18784,7 @@ function parseSpriteExecArgs(args2) {
         i++;
         continue;
       }
-      return { spriteName: null, remoteCommand: null };
+      return { spriteName: null, remoteArgs: [] };
     }
     while (i < args2.length) {
       remoteArgs.push(args2[i]);
@@ -18793,32 +18792,19 @@ function parseSpriteExecArgs(args2) {
     }
     break;
   }
-  return {
-    spriteName,
-    remoteCommand: remoteArgs.length > 0 ? remoteArgs.join(" ") : null
-  };
+  return { spriteName, remoteArgs };
 }
 function evaluateSpriteExec(cmd, config) {
   const { command, args: args2 } = cmd;
-  const { spriteName, remoteCommand } = parseSpriteExecArgs(args2);
+  const { spriteName, remoteArgs } = parseSpriteExecArgs(args2);
   const trustedSprites = config.trustedSprites || [];
   if (!spriteName || !matchesPattern(spriteName, trustedSprites)) return null;
-  if (!remoteCommand) {
-    return {
-      command,
-      args: args2,
-      decision: "allow",
-      reason: `Trusted sprite "${spriteName}" (interactive)`,
-      matchedRule: "trustedSprites"
-    };
-  }
-  const parsed = parseCommand(remoteCommand);
-  const result = evaluate(parsed, config);
+  const result = evaluateRemoteCommand(remoteArgs, config);
   return {
     command,
     args: args2,
     decision: result.decision,
-    reason: `Trusted sprite "${spriteName}": ${result.reason}`,
+    reason: `Trusted sprite "${spriteName}" (${result.reason})`,
     matchedRule: "trustedSprites"
   };
 }

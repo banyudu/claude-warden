@@ -305,7 +305,46 @@ const DOCKER_EXEC_FLAGS_WITH_VALUE = new Set([
 
 interface ExecParseResult {
   target: string | null;
-  remoteCommand: string | null;
+  remoteArgs: string[];
+}
+
+/** Shell interpreters that are safe as interactive sessions on trusted remotes. */
+const INTERACTIVE_SHELLS = new Set(['bash', 'sh', 'zsh']);
+
+/**
+ * Evaluate remote command args from a trusted remote context (docker, kubectl, sprite).
+ * Handles: no command (interactive), bare shell, shell -c "...", and normal commands.
+ * Uses structured args to avoid losing quote context from join+re-parse.
+ */
+function evaluateRemoteCommand(
+  remoteArgs: string[],
+  config: WardenConfig,
+): EvalResult {
+  if (remoteArgs.length === 0) {
+    return { decision: 'allow', reason: 'interactive', details: [] };
+  }
+
+  const remoteCmd = remoteArgs[0];
+
+  // Bare shell invocation (e.g. `bash`, `sh`) → interactive session
+  if (INTERACTIVE_SHELLS.has(remoteCmd) && remoteArgs.length === 1) {
+    return { decision: 'allow', reason: 'interactive shell', details: [] };
+  }
+
+  // Shell -c "..." → evaluate the inner command string (which preserves pipes/operators)
+  if (INTERACTIVE_SHELLS.has(remoteCmd) && remoteArgs[1] === '-c' && remoteArgs.length >= 3) {
+    const innerCommand = remoteArgs.slice(2).join(' ');
+    const parsed = parseCommand(innerCommand);
+    return evaluate(parsed, config);
+  }
+
+  // Normal command — construct a ParsedCommand directly from structured args
+  const parsed: ParseResult = {
+    commands: [{ command: remoteCmd, args: remoteArgs.slice(1) }],
+    hasSubshell: false,
+    subshellCommands: [],
+  };
+  return evaluate(parsed, config);
 }
 
 function parseDockerExecArgs(args: string[]): ExecParseResult {
@@ -335,31 +374,21 @@ function parseDockerExecArgs(args: string[]): ExecParseResult {
     i++;
   }
 
-  return { target, remoteCommand: remoteArgs.length > 0 ? remoteArgs.join(' ') : null };
+  return { target, remoteArgs };
 }
 
 function evaluateDockerExec(cmd: ParsedCommand, config: WardenConfig): CommandEvalDetail | null {
   const { command, args } = cmd;
   if (args[0] !== 'exec') return null;
 
-  const { target, remoteCommand } = parseDockerExecArgs(args.slice(1));
+  const { target, remoteArgs } = parseDockerExecArgs(args.slice(1));
   if (!target || !matchesPattern(target, config.trustedDockerContainers || [])) return null;
 
-  if (!remoteCommand) {
-    return {
-      command, args,
-      decision: 'allow',
-      reason: `Trusted Docker container "${target}" (interactive)`,
-      matchedRule: 'trustedDockerContainers',
-    };
-  }
-
-  const parsed = parseCommand(remoteCommand);
-  const result = evaluate(parsed, config);
+  const result = evaluateRemoteCommand(remoteArgs, config);
   return {
     command, args,
     decision: result.decision,
-    reason: `Trusted Docker container "${target}": ${result.reason}`,
+    reason: `Trusted Docker container "${target}" (${result.reason})`,
     matchedRule: 'trustedDockerContainers',
   };
 }
@@ -375,18 +404,16 @@ const KUBECTL_FLAGS_WITH_VALUE = new Set([
   '--cache-dir', '--request-timeout', '-o', '--output',
 ]);
 
-function parseKubectlExecArgs(args: string[]): { context: string | null; pod: string | null; remoteCommand: string | null } {
+function parseKubectlExecArgs(args: string[]): { context: string | null; pod: string | null; remoteArgs: string[] } {
   let context: string | null = null;
   let pod: string | null = null;
   const remoteArgs: string[] = [];
   let i = 0;
-  let pastSeparator = false;
 
   while (i < args.length) {
     const arg = args[i];
 
     if (arg === '--') {
-      pastSeparator = true;
       i++;
       while (i < args.length) {
         remoteArgs.push(args[i]);
@@ -420,34 +447,24 @@ function parseKubectlExecArgs(args: string[]): { context: string | null; pod: st
     i++;
   }
 
-  return { context, pod, remoteCommand: remoteArgs.length > 0 ? remoteArgs.join(' ') : null };
+  return { context, pod, remoteArgs };
 }
 
 function evaluateKubectlExec(cmd: ParsedCommand, config: WardenConfig): CommandEvalDetail | null {
   const { command, args } = cmd;
   if (args[0] !== 'exec') return null;
 
-  const { context, pod, remoteCommand } = parseKubectlExecArgs(args.slice(1));
+  const { context, pod, remoteArgs } = parseKubectlExecArgs(args.slice(1));
   const trustedContexts = config.trustedKubectlContexts || [];
 
   // Must have a context (explicit or matched) to whitelist
   if (!context || !matchesPattern(context, trustedContexts)) return null;
 
-  if (!remoteCommand) {
-    return {
-      command, args,
-      decision: 'allow',
-      reason: `Trusted kubectl context "${context}"${pod ? `, pod "${pod}"` : ''} (interactive)`,
-      matchedRule: 'trustedKubectlContexts',
-    };
-  }
-
-  const parsed = parseCommand(remoteCommand);
-  const result = evaluate(parsed, config);
+  const result = evaluateRemoteCommand(remoteArgs, config);
   return {
     command, args,
     decision: result.decision,
-    reason: `Trusted kubectl context "${context}": ${result.reason}`,
+    reason: `Trusted kubectl context "${context}"${pod ? `, pod "${pod}"` : ''} (${result.reason})`,
     matchedRule: 'trustedKubectlContexts',
   };
 }
@@ -459,7 +476,7 @@ const SPRITE_FLAGS_WITH_VALUE = new Set([
   '-o', '--org', '-s', '--sprite',
 ]);
 
-function parseSpriteExecArgs(args: string[]): { spriteName: string | null; remoteCommand: string | null } {
+function parseSpriteExecArgs(args: string[]): { spriteName: string | null; remoteArgs: string[] } {
   let spriteName: string | null = null;
   const remoteArgs: string[] = [];
   let foundExec = false;
@@ -486,7 +503,6 @@ function parseSpriteExecArgs(args: string[]): { spriteName: string | null; remot
     }
 
     if (arg === '--debug') {
-      // --debug or --debug=<file>
       i++;
       continue;
     }
@@ -504,7 +520,7 @@ function parseSpriteExecArgs(args: string[]): { spriteName: string | null; remot
         continue;
       }
       // Unknown positional before subcommand — bail
-      return { spriteName: null, remoteCommand: null };
+      return { spriteName: null, remoteArgs: [] };
     }
 
     // After exec subcommand, remaining args are the remote command
@@ -515,34 +531,21 @@ function parseSpriteExecArgs(args: string[]): { spriteName: string | null; remot
     break;
   }
 
-  return {
-    spriteName,
-    remoteCommand: remoteArgs.length > 0 ? remoteArgs.join(' ') : null,
-  };
+  return { spriteName, remoteArgs };
 }
 
 function evaluateSpriteExec(cmd: ParsedCommand, config: WardenConfig): CommandEvalDetail | null {
   const { command, args } = cmd;
-  const { spriteName, remoteCommand } = parseSpriteExecArgs(args);
+  const { spriteName, remoteArgs } = parseSpriteExecArgs(args);
   const trustedSprites = config.trustedSprites || [];
 
   if (!spriteName || !matchesPattern(spriteName, trustedSprites)) return null;
 
-  if (!remoteCommand) {
-    return {
-      command, args,
-      decision: 'allow',
-      reason: `Trusted sprite "${spriteName}" (interactive)`,
-      matchedRule: 'trustedSprites',
-    };
-  }
-
-  const parsed = parseCommand(remoteCommand);
-  const result = evaluate(parsed, config);
+  const result = evaluateRemoteCommand(remoteArgs, config);
   return {
     command, args,
     decision: result.decision,
-    reason: `Trusted sprite "${spriteName}": ${result.reason}`,
+    reason: `Trusted sprite "${spriteName}" (${result.reason})`,
     matchedRule: 'trustedSprites',
   };
 }
