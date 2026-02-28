@@ -177,6 +177,18 @@ describe('integration: realistic commands', () => {
       expect(warden('echo $(whoami)').decision).toBe('allow');
     });
 
+    it('set -a → allow (shell option builtin)', () => {
+      expect(warden('set -a').decision).toBe('allow');
+    });
+
+    it('set +a → allow (shell option builtin)', () => {
+      expect(warden('set +a').decision).toBe('allow');
+    });
+
+    it('set -a && set +a && echo "loaded" → allow', () => {
+      expect(warden('set -a && set +a && echo "loaded"').decision).toBe('allow');
+    });
+
     it('npm publish → ask', () => {
       expect(warden('npm publish').decision).toBe('ask');
     });

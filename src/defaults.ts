@@ -124,7 +124,7 @@ export const DEFAULT_CONFIG: WardenConfig = {
       // Terminal
       'stty', 'tput', 'reset', 'clear',
       // Misc safe
-      'cd', 'pushd', 'popd', 'dirs', 'hash', 'alias',
+      'cd', 'pushd', 'popd', 'dirs', 'hash', 'alias', 'set',
       'sleep', 'wait', 'time',
       'md5', 'md5sum', 'sha256sum', 'shasum', 'cksum',
       'base64', 'openssl',

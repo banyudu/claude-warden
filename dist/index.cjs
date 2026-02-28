@@ -19084,6 +19084,7 @@ var DEFAULT_CONFIG = {
       "dirs",
       "hash",
       "alias",
+      "set",
       "sleep",
       "wait",
       "time",
