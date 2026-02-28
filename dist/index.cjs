@@ -18583,7 +18583,7 @@ function evaluateSSHCommand(cmd, config) {
     };
   }
   const parsed = parseCommand(remoteCommand);
-  const result = evaluate(parsed, config);
+  const result = evaluate(parsed, configWithContextOverrides(config));
   return {
     command,
     args: args2,
@@ -18603,7 +18603,15 @@ var DOCKER_EXEC_FLAGS_WITH_VALUE = /* @__PURE__ */ new Set([
   "--detach-keys"
 ]);
 var INTERACTIVE_SHELLS = /* @__PURE__ */ new Set(["bash", "sh", "zsh"]);
+function configWithContextOverrides(config) {
+  if (!config.trustedContextOverrides) return config;
+  return {
+    ...config,
+    layers: [config.trustedContextOverrides, ...config.layers]
+  };
+}
 function evaluateRemoteCommand(remoteArgs, config) {
+  const overriddenConfig = configWithContextOverrides(config);
   if (remoteArgs.length === 0) {
     return { decision: "allow", reason: "interactive", details: [] };
   }
@@ -18614,14 +18622,14 @@ function evaluateRemoteCommand(remoteArgs, config) {
   if (INTERACTIVE_SHELLS.has(remoteCmd) && remoteArgs[1] === "-c" && remoteArgs.length >= 3) {
     const innerCommand = remoteArgs.slice(2).join(" ");
     const parsed2 = parseCommand(innerCommand);
-    return evaluate(parsed2, config);
+    return evaluate(parsed2, overriddenConfig);
   }
   const parsed = {
     commands: [{ command: remoteCmd, args: remoteArgs.slice(1) }],
     hasSubshell: false,
     subshellCommands: []
   };
-  return evaluate(parsed, config);
+  return evaluate(parsed, overriddenConfig);
 }
 function parseDockerExecArgs(args2) {
   let target = null;
@@ -19344,6 +19352,19 @@ function mergeNonLayerFields(config, raw) {
   }
   if (typeof raw.askOnSubshell === "boolean") {
     config.askOnSubshell = raw.askOnSubshell;
+  }
+  if (raw.trustedContextOverrides && typeof raw.trustedContextOverrides === "object") {
+    const overrides = raw.trustedContextOverrides;
+    const layer = extractLayer(overrides);
+    if (config.trustedContextOverrides) {
+      config.trustedContextOverrides = {
+        alwaysAllow: [...layer.alwaysAllow, ...config.trustedContextOverrides.alwaysAllow],
+        alwaysDeny: [...layer.alwaysDeny, ...config.trustedContextOverrides.alwaysDeny],
+        rules: [...layer.rules, ...config.trustedContextOverrides.rules]
+      };
+    } else {
+      config.trustedContextOverrides = layer;
+    }
   }
 }
 
