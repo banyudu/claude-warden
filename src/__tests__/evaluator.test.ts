@@ -564,4 +564,74 @@ describe('evaluator', () => {
       expect(evalWith(`sprite exec -s my-sprite bash -c 'tail -100 /tmp/app.log | grep error | tail -20'`, { trustedSprites: sprites }).decision).toBe('allow');
     });
   });
+
+  describe('trustedContextOverrides', () => {
+    const overrides = {
+      alwaysAllow: ['sudo', 'apt'],
+      alwaysDeny: [],
+      rules: [],
+    };
+
+    it('allows sudo inside trusted docker container with override', () => {
+      expect(evalWith('docker exec my-app sudo apt install curl', {
+        trustedDockerContainers: ['my-app'],
+        trustedContextOverrides: overrides,
+      }).decision).toBe('allow');
+    });
+
+    it('still denies sudo on the host (not in remote context)', () => {
+      expect(evalWith('sudo apt install curl', {
+        trustedContextOverrides: overrides,
+      }).decision).toBe('deny');
+    });
+
+    it('allows sudo inside trusted kubectl context with override', () => {
+      expect(evalWith('kubectl exec --context minikube my-pod -- sudo apt install curl', {
+        trustedKubectlContexts: ['minikube'],
+        trustedContextOverrides: overrides,
+      }).decision).toBe('allow');
+    });
+
+    it('allows sudo inside trusted SSH host with override', () => {
+      expect(evalWith('ssh devserver sudo apt install curl', {
+        trustedSSHHosts: ['devserver'],
+        trustedContextOverrides: overrides,
+      }).decision).toBe('allow');
+    });
+
+    it('allows sudo inside trusted sprite with override', () => {
+      expect(evalWith('sprite exec -s my-sprite sudo apt install curl', {
+        trustedSprites: ['my-sprite'],
+        trustedContextOverrides: overrides,
+      }).decision).toBe('allow');
+    });
+
+    it('allows sudo via bash -c inside trusted docker with override', () => {
+      expect(evalWith('docker exec my-app bash -c "sudo apt install curl"', {
+        trustedDockerContainers: ['my-app'],
+        trustedContextOverrides: overrides,
+      }).decision).toBe('allow');
+    });
+
+    it('still denies non-overridden dangerous commands in remote context', () => {
+      expect(evalWith('docker exec my-app shutdown now', {
+        trustedDockerContainers: ['my-app'],
+        trustedContextOverrides: overrides,
+      }).decision).toBe('deny');
+    });
+
+    it('does not apply overrides to untrusted containers', () => {
+      expect(evalWith('docker exec unknown-app sudo apt install curl', {
+        trustedDockerContainers: ['my-app'],
+        trustedContextOverrides: overrides,
+      }).decision).toBe('ask');
+    });
+
+    it('supports alwaysDeny in context overrides', () => {
+      expect(evalWith('docker exec my-app curl http://example.com', {
+        trustedDockerContainers: ['my-app'],
+        trustedContextOverrides: { alwaysAllow: [], alwaysDeny: ['curl'], rules: [] },
+      }).decision).toBe('deny');
+    });
+  });
 });

@@ -285,9 +285,9 @@ function evaluateSSHCommand(cmd: ParsedCommand, config: WardenConfig): CommandEv
     };
   }
 
-  // Trusted host with remote command — recursively evaluate
+  // Trusted host with remote command — recursively evaluate with context overrides
   const parsed = parseCommand(remoteCommand);
-  const result = evaluate(parsed, config);
+  const result = evaluate(parsed, configWithContextOverrides(config));
   return {
     command, args,
     decision: result.decision,
@@ -311,6 +311,15 @@ interface ExecParseResult {
 /** Shell interpreters that are safe as interactive sessions on trusted remotes. */
 const INTERACTIVE_SHELLS = new Set(['bash', 'sh', 'zsh']);
 
+/** Build a config with trustedContextOverrides applied as the highest-priority layer. */
+function configWithContextOverrides(config: WardenConfig): WardenConfig {
+  if (!config.trustedContextOverrides) return config;
+  return {
+    ...config,
+    layers: [config.trustedContextOverrides, ...config.layers],
+  };
+}
+
 /**
  * Evaluate remote command args from a trusted remote context (docker, kubectl, sprite).
  * Handles: no command (interactive), bare shell, shell -c "...", and normal commands.
@@ -320,6 +329,8 @@ function evaluateRemoteCommand(
   remoteArgs: string[],
   config: WardenConfig,
 ): EvalResult {
+  const overriddenConfig = configWithContextOverrides(config);
+
   if (remoteArgs.length === 0) {
     return { decision: 'allow', reason: 'interactive', details: [] };
   }
@@ -335,7 +346,7 @@ function evaluateRemoteCommand(
   if (INTERACTIVE_SHELLS.has(remoteCmd) && remoteArgs[1] === '-c' && remoteArgs.length >= 3) {
     const innerCommand = remoteArgs.slice(2).join(' ');
     const parsed = parseCommand(innerCommand);
-    return evaluate(parsed, config);
+    return evaluate(parsed, overriddenConfig);
   }
 
   // Normal command — construct a ParsedCommand directly from structured args
@@ -344,7 +355,7 @@ function evaluateRemoteCommand(
     hasSubshell: false,
     subshellCommands: [],
   };
-  return evaluate(parsed, config);
+  return evaluate(parsed, overriddenConfig);
 }
 
 function parseDockerExecArgs(args: string[]): ExecParseResult {

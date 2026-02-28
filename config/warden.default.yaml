@@ -51,6 +51,17 @@ askOnSubshell: true
 #   - my-sprite
 #   - dev-*
 
+# Override rules when evaluating commands inside trusted remote contexts
+# (docker exec, kubectl exec, ssh, sprite exec). These overrides are applied
+# as the highest-priority layer only for remote command evaluation.
+# trustedContextOverrides:
+#   alwaysAllow:
+#     - sudo
+#     - apt
+#     - apt-get
+#   alwaysDeny: []
+#   rules: []
+
 # Command-specific rules (override built-in rules by command name).
 # The first scope (project > user > default) with a rule for a given command wins.
 # rules:

@@ -102,4 +102,18 @@ function mergeNonLayerFields(config: WardenConfig, raw: Record<string, unknown>)
   if (typeof raw.askOnSubshell === 'boolean') {
     config.askOnSubshell = raw.askOnSubshell;
   }
+  if (raw.trustedContextOverrides && typeof raw.trustedContextOverrides === 'object') {
+    const overrides = raw.trustedContextOverrides as Record<string, unknown>;
+    const layer = extractLayer(overrides);
+    // Merge with existing overrides (later config wins by prepending)
+    if (config.trustedContextOverrides) {
+      config.trustedContextOverrides = {
+        alwaysAllow: [...layer.alwaysAllow, ...config.trustedContextOverrides.alwaysAllow],
+        alwaysDeny: [...layer.alwaysDeny, ...config.trustedContextOverrides.alwaysDeny],
+        rules: [...layer.rules, ...config.trustedContextOverrides.rules],
+      };
+    } else {
+      config.trustedContextOverrides = layer;
+    }
+  }
 }
