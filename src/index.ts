@@ -23,6 +23,11 @@ async function main() {
     process.exit(0);
   }
 
+  // Auto-allow when running with --dangerously-skip-permissions
+  if (input.permission_mode === 'dangerously-skip-permissions') {
+    process.exit(0);
+  }
+
   const command = input.tool_input?.command;
   if (!command || typeof command !== 'string') {
     process.exit(0);
