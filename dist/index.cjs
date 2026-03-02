@@ -19080,6 +19080,18 @@ var DEFAULT_CONFIG = {
       "yq",
       "xargs",
       "seq",
+      // Network diagnostics (read-only)
+      "nslookup",
+      "dig",
+      "host",
+      "ping",
+      "traceroute",
+      "mtr",
+      "netstat",
+      "ss",
+      "ifconfig",
+      "ip",
+      "nmap",
       // Pagers and formatters
       "bat",
       "pygmentize",
