@@ -2,7 +2,11 @@ import { describe, it, expect } from 'vitest';
 import { evaluate } from '../evaluator';
 import { parseCommand } from '../parser';
 import { DEFAULT_CONFIG } from '../defaults';
-import type { WardenConfig, ConfigLayer } from '../types';
+import type { WardenConfig, ConfigLayer, TrustedTarget } from '../types';
+
+function toTargets(items: (string | TrustedTarget)[]): TrustedTarget[] {
+  return items.map(i => typeof i === 'string' ? { name: i } : i);
+}
 
 function eval_(cmd: string) {
   return evaluate(parseCommand(cmd), DEFAULT_CONFIG);
@@ -13,8 +17,8 @@ function evalWith(cmd: string, overrides: Partial<WardenConfig>) {
   return evaluate(parseCommand(cmd), config);
 }
 
-function evalWithSSH(cmd: string, trustedHosts: string[]) {
-  return evalWith(cmd, { trustedSSHHosts: trustedHosts });
+function evalWithSSH(cmd: string, trustedHosts: (string | TrustedTarget)[]) {
+  return evalWith(cmd, { trustedSSHHosts: toTargets(trustedHosts) });
 }
 
 describe('evaluator', () => {
@@ -313,30 +317,30 @@ describe('evaluator', () => {
     });
 
     it('matches ? glob pattern (single char)', () => {
-      expect(evalWith('ssh dev?', { trustedSSHHosts: ['dev?'] }).decision).toBe('allow');
-      expect(evalWith('ssh devAB', { trustedSSHHosts: ['dev?'] }).decision).toBe('ask');
+      expect(evalWith('ssh dev?', { trustedSSHHosts: toTargets(['dev?']) }).decision).toBe('allow');
+      expect(evalWith('ssh devAB', { trustedSSHHosts: toTargets(['dev?']) }).decision).toBe('ask');
     });
 
     it('matches [...] character class', () => {
-      expect(evalWith('ssh dev1', { trustedSSHHosts: ['dev[123]'] }).decision).toBe('allow');
-      expect(evalWith('ssh dev4', { trustedSSHHosts: ['dev[123]'] }).decision).toBe('ask');
+      expect(evalWith('ssh dev1', { trustedSSHHosts: toTargets(['dev[123]']) }).decision).toBe('allow');
+      expect(evalWith('ssh dev4', { trustedSSHHosts: toTargets(['dev[123]']) }).decision).toBe('ask');
     });
 
     it('matches [!...] negated character class', () => {
-      expect(evalWith('ssh devX', { trustedSSHHosts: ['dev[!0-9]'] }).decision).toBe('allow');
-      expect(evalWith('ssh dev5', { trustedSSHHosts: ['dev[!0-9]'] }).decision).toBe('ask');
+      expect(evalWith('ssh devX', { trustedSSHHosts: toTargets(['dev[!0-9]']) }).decision).toBe('allow');
+      expect(evalWith('ssh dev5', { trustedSSHHosts: toTargets(['dev[!0-9]']) }).decision).toBe('ask');
     });
 
     it('matches {a,b,c} brace expansion', () => {
-      expect(evalWith('ssh staging', { trustedSSHHosts: ['{staging,prod}'] }).decision).toBe('allow');
-      expect(evalWith('ssh prod', { trustedSSHHosts: ['{staging,prod}'] }).decision).toBe('allow');
-      expect(evalWith('ssh dev', { trustedSSHHosts: ['{staging,prod}'] }).decision).toBe('ask');
+      expect(evalWith('ssh staging', { trustedSSHHosts: toTargets(['{staging,prod}']) }).decision).toBe('allow');
+      expect(evalWith('ssh prod', { trustedSSHHosts: toTargets(['{staging,prod}']) }).decision).toBe('allow');
+      expect(evalWith('ssh dev', { trustedSSHHosts: toTargets(['{staging,prod}']) }).decision).toBe('ask');
     });
 
     it('matches combined glob features', () => {
-      expect(evalWith('ssh web-staging-01', { trustedSSHHosts: ['{web,api}-*-[0-9][0-9]'] }).decision).toBe('allow');
-      expect(evalWith('ssh api-prod-99', { trustedSSHHosts: ['{web,api}-*-[0-9][0-9]'] }).decision).toBe('allow');
-      expect(evalWith('ssh db-staging-01', { trustedSSHHosts: ['{web,api}-*-[0-9][0-9]'] }).decision).toBe('ask');
+      expect(evalWith('ssh web-staging-01', { trustedSSHHosts: toTargets(['{web,api}-*-[0-9][0-9]']) }).decision).toBe('allow');
+      expect(evalWith('ssh api-prod-99', { trustedSSHHosts: toTargets(['{web,api}-*-[0-9][0-9]']) }).decision).toBe('allow');
+      expect(evalWith('ssh db-staging-01', { trustedSSHHosts: toTargets(['{web,api}-*-[0-9][0-9]']) }).decision).toBe('ask');
     });
 
     it('skips SSH flags correctly', () => {
@@ -384,56 +388,56 @@ describe('evaluator', () => {
     const containers = ['my-app', 'dev-*'];
 
     it('allows docker exec on trusted container', () => {
-      expect(evalWith('docker exec my-app ls', { trustedDockerContainers: containers }).decision).toBe('allow');
+      expect(evalWith('docker exec my-app ls', { trustedDockerContainers: toTargets(containers) }).decision).toBe('allow');
     });
 
     it('allows docker exec with flags on trusted container', () => {
-      expect(evalWith('docker exec -it my-app ls', { trustedDockerContainers: containers }).decision).toBe('allow');
+      expect(evalWith('docker exec -it my-app ls', { trustedDockerContainers: toTargets(containers) }).decision).toBe('allow');
     });
 
     it('allows docker exec interactive (no command) on trusted container', () => {
-      expect(evalWith('docker exec -it my-app', { trustedDockerContainers: containers }).decision).toBe('allow');
+      expect(evalWith('docker exec -it my-app', { trustedDockerContainers: toTargets(containers) }).decision).toBe('allow');
     });
 
     it('denies docker exec with dangerous command on trusted container', () => {
-      expect(evalWith('docker exec my-app sudo rm -rf /', { trustedDockerContainers: containers }).decision).toBe('deny');
+      expect(evalWith('docker exec my-app sudo rm -rf /', { trustedDockerContainers: toTargets(containers) }).decision).toBe('deny');
     });
 
     it('asks for docker exec on untrusted container', () => {
-      expect(evalWith('docker exec unknown-app ls', { trustedDockerContainers: containers }).decision).toBe('ask');
+      expect(evalWith('docker exec unknown-app ls', { trustedDockerContainers: toTargets(containers) }).decision).toBe('ask');
     });
 
     it('matches glob patterns for containers', () => {
-      expect(evalWith('docker exec dev-web ls', { trustedDockerContainers: containers }).decision).toBe('allow');
+      expect(evalWith('docker exec dev-web ls', { trustedDockerContainers: toTargets(containers) }).decision).toBe('allow');
     });
 
     it('does not intercept non-exec docker commands', () => {
-      expect(evalWith('docker ps', { trustedDockerContainers: containers }).decision).toBe('allow');
-      expect(evalWith('docker run ubuntu', { trustedDockerContainers: containers }).decision).toBe('ask');
+      expect(evalWith('docker ps', { trustedDockerContainers: toTargets(containers) }).decision).toBe('allow');
+      expect(evalWith('docker run ubuntu', { trustedDockerContainers: toTargets(containers) }).decision).toBe('ask');
     });
 
     it('skips docker exec flags with values', () => {
-      expect(evalWith('docker exec -e FOO=bar -u root my-app cat /etc/hosts', { trustedDockerContainers: containers }).decision).toBe('allow');
+      expect(evalWith('docker exec -e FOO=bar -u root my-app cat /etc/hosts', { trustedDockerContainers: toTargets(containers) }).decision).toBe('allow');
     });
 
     it('allows bare bash on trusted container (interactive shell)', () => {
-      expect(evalWith('docker exec -it my-app bash', { trustedDockerContainers: containers }).decision).toBe('allow');
+      expect(evalWith('docker exec -it my-app bash', { trustedDockerContainers: toTargets(containers) }).decision).toBe('allow');
     });
 
     it('allows bare sh on trusted container (interactive shell)', () => {
-      expect(evalWith('docker exec my-app sh', { trustedDockerContainers: containers }).decision).toBe('allow');
+      expect(evalWith('docker exec my-app sh', { trustedDockerContainers: toTargets(containers) }).decision).toBe('allow');
     });
 
     it('allows bash -c with safe command on trusted container', () => {
-      expect(evalWith('docker exec my-app bash -c "ls -la"', { trustedDockerContainers: containers }).decision).toBe('allow');
+      expect(evalWith('docker exec my-app bash -c "ls -la"', { trustedDockerContainers: toTargets(containers) }).decision).toBe('allow');
     });
 
     it('denies bash -c with dangerous command on trusted container', () => {
-      expect(evalWith('docker exec my-app bash -c "sudo rm -rf /"', { trustedDockerContainers: containers }).decision).toBe('deny');
+      expect(evalWith('docker exec my-app bash -c "sudo rm -rf /"', { trustedDockerContainers: toTargets(containers) }).decision).toBe('deny');
     });
 
     it('allows bash -c with piped safe commands on trusted container', () => {
-      expect(evalWith(`docker exec my-app bash -c 'tail -100 /tmp/app.log | grep error | tail -20'`, { trustedDockerContainers: containers }).decision).toBe('allow');
+      expect(evalWith(`docker exec my-app bash -c 'tail -100 /tmp/app.log | grep error | tail -20'`, { trustedDockerContainers: toTargets(containers) }).decision).toBe('allow');
     });
   });
 
@@ -441,59 +445,59 @@ describe('evaluator', () => {
     const contexts = ['minikube', 'dev-*'];
 
     it('allows kubectl exec on trusted context with safe command', () => {
-      expect(evalWith('kubectl exec --context minikube my-pod -- cat /etc/hosts', { trustedKubectlContexts: contexts }).decision).toBe('allow');
+      expect(evalWith('kubectl exec --context minikube my-pod -- cat /etc/hosts', { trustedKubectlContexts: toTargets(contexts) }).decision).toBe('allow');
     });
 
     it('allows kubectl exec interactive on trusted context', () => {
-      expect(evalWith('kubectl exec --context minikube -it my-pod', { trustedKubectlContexts: contexts }).decision).toBe('allow');
+      expect(evalWith('kubectl exec --context minikube -it my-pod', { trustedKubectlContexts: toTargets(contexts) }).decision).toBe('allow');
     });
 
     it('denies kubectl exec with dangerous command on trusted context', () => {
-      expect(evalWith('kubectl exec --context minikube my-pod -- sudo rm -rf /', { trustedKubectlContexts: contexts }).decision).toBe('deny');
+      expect(evalWith('kubectl exec --context minikube my-pod -- sudo rm -rf /', { trustedKubectlContexts: toTargets(contexts) }).decision).toBe('deny');
     });
 
     it('asks for kubectl exec without context', () => {
-      expect(evalWith('kubectl exec my-pod -- ls', { trustedKubectlContexts: contexts }).decision).toBe('ask');
+      expect(evalWith('kubectl exec my-pod -- ls', { trustedKubectlContexts: toTargets(contexts) }).decision).toBe('ask');
     });
 
     it('asks for kubectl exec on untrusted context', () => {
-      expect(evalWith('kubectl exec --context production my-pod -- ls', { trustedKubectlContexts: contexts }).decision).toBe('ask');
+      expect(evalWith('kubectl exec --context production my-pod -- ls', { trustedKubectlContexts: toTargets(contexts) }).decision).toBe('ask');
     });
 
     it('matches glob patterns for contexts', () => {
-      expect(evalWith('kubectl exec --context dev-cluster my-pod -- ls', { trustedKubectlContexts: contexts }).decision).toBe('allow');
+      expect(evalWith('kubectl exec --context dev-cluster my-pod -- ls', { trustedKubectlContexts: toTargets(contexts) }).decision).toBe('allow');
     });
 
     it('handles --context=value syntax', () => {
-      expect(evalWith('kubectl exec --context=minikube my-pod -- ls', { trustedKubectlContexts: contexts }).decision).toBe('allow');
+      expect(evalWith('kubectl exec --context=minikube my-pod -- ls', { trustedKubectlContexts: toTargets(contexts) }).decision).toBe('allow');
     });
 
     it('does not intercept non-exec kubectl commands', () => {
-      expect(evalWith('kubectl get pods --context minikube', { trustedKubectlContexts: contexts }).decision).toBe('ask');
+      expect(evalWith('kubectl get pods --context minikube', { trustedKubectlContexts: toTargets(contexts) }).decision).toBe('ask');
     });
 
     it('handles namespace and container flags', () => {
-      expect(evalWith('kubectl exec --context minikube -n default -c app my-pod -- cat /tmp/log', { trustedKubectlContexts: contexts }).decision).toBe('allow');
+      expect(evalWith('kubectl exec --context minikube -n default -c app my-pod -- cat /tmp/log', { trustedKubectlContexts: toTargets(contexts) }).decision).toBe('allow');
     });
 
     it('allows bare bash on trusted context (interactive shell)', () => {
-      expect(evalWith('kubectl exec --context minikube my-pod -- bash', { trustedKubectlContexts: contexts }).decision).toBe('allow');
+      expect(evalWith('kubectl exec --context minikube my-pod -- bash', { trustedKubectlContexts: toTargets(contexts) }).decision).toBe('allow');
     });
 
     it('allows bare sh on trusted context (interactive shell)', () => {
-      expect(evalWith('kubectl exec --context minikube my-pod -- sh', { trustedKubectlContexts: contexts }).decision).toBe('allow');
+      expect(evalWith('kubectl exec --context minikube my-pod -- sh', { trustedKubectlContexts: toTargets(contexts) }).decision).toBe('allow');
     });
 
     it('allows bash -c with safe command on trusted context', () => {
-      expect(evalWith('kubectl exec --context minikube my-pod -- bash -c "ls -la"', { trustedKubectlContexts: contexts }).decision).toBe('allow');
+      expect(evalWith('kubectl exec --context minikube my-pod -- bash -c "ls -la"', { trustedKubectlContexts: toTargets(contexts) }).decision).toBe('allow');
     });
 
     it('denies bash -c with dangerous command on trusted context', () => {
-      expect(evalWith('kubectl exec --context minikube my-pod -- bash -c "sudo rm -rf /"', { trustedKubectlContexts: contexts }).decision).toBe('deny');
+      expect(evalWith('kubectl exec --context minikube my-pod -- bash -c "sudo rm -rf /"', { trustedKubectlContexts: toTargets(contexts) }).decision).toBe('deny');
     });
 
     it('allows bash -c with piped safe commands on trusted context', () => {
-      expect(evalWith(`kubectl exec --context minikube my-pod -- bash -c 'tail -100 /tmp/app.log | grep error | tail -20'`, { trustedKubectlContexts: contexts }).decision).toBe('allow');
+      expect(evalWith(`kubectl exec --context minikube my-pod -- bash -c 'tail -100 /tmp/app.log | grep error | tail -20'`, { trustedKubectlContexts: toTargets(contexts) }).decision).toBe('allow');
     });
   });
 
@@ -501,67 +505,67 @@ describe('evaluator', () => {
     const sprites = ['my-sprite', 'dev-*'];
 
     it('allows sprite exec on trusted sprite', () => {
-      expect(evalWith('sprite exec -s my-sprite ls -la', { trustedSprites: sprites }).decision).toBe('allow');
+      expect(evalWith('sprite exec -s my-sprite ls -la', { trustedSprites: toTargets(sprites) }).decision).toBe('allow');
     });
 
     it('allows sprite x (alias) on trusted sprite', () => {
-      expect(evalWith('sprite x -s my-sprite ls', { trustedSprites: sprites }).decision).toBe('allow');
+      expect(evalWith('sprite x -s my-sprite ls', { trustedSprites: toTargets(sprites) }).decision).toBe('allow');
     });
 
     it('allows sprite console on trusted sprite', () => {
-      expect(evalWith('sprite console -s my-sprite', { trustedSprites: sprites }).decision).toBe('allow');
+      expect(evalWith('sprite console -s my-sprite', { trustedSprites: toTargets(sprites) }).decision).toBe('allow');
     });
 
     it('allows sprite c (alias) on trusted sprite', () => {
-      expect(evalWith('sprite c -s my-sprite', { trustedSprites: sprites }).decision).toBe('allow');
+      expect(evalWith('sprite c -s my-sprite', { trustedSprites: toTargets(sprites) }).decision).toBe('allow');
     });
 
     it('denies sprite exec with dangerous command on trusted sprite', () => {
-      expect(evalWith('sprite exec -s my-sprite sudo rm -rf /', { trustedSprites: sprites }).decision).toBe('deny');
+      expect(evalWith('sprite exec -s my-sprite sudo rm -rf /', { trustedSprites: toTargets(sprites) }).decision).toBe('deny');
     });
 
     it('asks for sprite exec on untrusted sprite', () => {
-      expect(evalWith('sprite exec -s unknown-sprite ls', { trustedSprites: sprites }).decision).toBe('ask');
+      expect(evalWith('sprite exec -s unknown-sprite ls', { trustedSprites: toTargets(sprites) }).decision).toBe('ask');
     });
 
     it('matches glob patterns', () => {
-      expect(evalWith('sprite exec -s dev-web ls', { trustedSprites: sprites }).decision).toBe('allow');
+      expect(evalWith('sprite exec -s dev-web ls', { trustedSprites: toTargets(sprites) }).decision).toBe('allow');
     });
 
     it('handles -o and -s flags before subcommand', () => {
-      expect(evalWith('sprite -o myorg -s my-sprite exec ls', { trustedSprites: sprites }).decision).toBe('allow');
+      expect(evalWith('sprite -o myorg -s my-sprite exec ls', { trustedSprites: toTargets(sprites) }).decision).toBe('allow');
     });
 
     it('handles --sprite=value syntax', () => {
-      expect(evalWith('sprite exec --sprite=my-sprite ls', { trustedSprites: sprites }).decision).toBe('allow');
+      expect(evalWith('sprite exec --sprite=my-sprite ls', { trustedSprites: toTargets(sprites) }).decision).toBe('allow');
     });
 
     it('handles -o and -s with exec subcommand and command', () => {
-      expect(evalWith('sprite exec -o myorg -s my-sprite npm start', { trustedSprites: sprites }).decision).toBe('allow');
+      expect(evalWith('sprite exec -o myorg -s my-sprite npm start', { trustedSprites: toTargets(sprites) }).decision).toBe('allow');
     });
 
     it('recursively evaluates ask-level remote commands', () => {
-      expect(evalWith('sprite exec -s my-sprite node script.js', { trustedSprites: sprites }).decision).toBe('ask');
+      expect(evalWith('sprite exec -s my-sprite node script.js', { trustedSprites: toTargets(sprites) }).decision).toBe('ask');
     });
 
     it('allows bare bash on trusted sprite (interactive shell)', () => {
-      expect(evalWith('sprite exec -s my-sprite bash', { trustedSprites: sprites }).decision).toBe('allow');
+      expect(evalWith('sprite exec -s my-sprite bash', { trustedSprites: toTargets(sprites) }).decision).toBe('allow');
     });
 
     it('allows bare sh on trusted sprite (interactive shell)', () => {
-      expect(evalWith('sprite exec -s my-sprite sh', { trustedSprites: sprites }).decision).toBe('allow');
+      expect(evalWith('sprite exec -s my-sprite sh', { trustedSprites: toTargets(sprites) }).decision).toBe('allow');
     });
 
     it('allows bash -c with safe command on trusted sprite', () => {
-      expect(evalWith('sprite exec -s my-sprite bash -c "ls -la"', { trustedSprites: sprites }).decision).toBe('allow');
+      expect(evalWith('sprite exec -s my-sprite bash -c "ls -la"', { trustedSprites: toTargets(sprites) }).decision).toBe('allow');
     });
 
     it('denies bash -c with dangerous command on trusted sprite', () => {
-      expect(evalWith('sprite exec -s my-sprite bash -c "sudo rm -rf /"', { trustedSprites: sprites }).decision).toBe('deny');
+      expect(evalWith('sprite exec -s my-sprite bash -c "sudo rm -rf /"', { trustedSprites: toTargets(sprites) }).decision).toBe('deny');
     });
 
     it('allows bash -c with piped safe commands on trusted sprite', () => {
-      expect(evalWith(`sprite exec -s my-sprite bash -c 'tail -100 /tmp/app.log | grep error | tail -20'`, { trustedSprites: sprites }).decision).toBe('allow');
+      expect(evalWith(`sprite exec -s my-sprite bash -c 'tail -100 /tmp/app.log | grep error | tail -20'`, { trustedSprites: toTargets(sprites) }).decision).toBe('allow');
     });
   });
 
@@ -574,7 +578,7 @@ describe('evaluator', () => {
 
     it('allows sudo inside trusted docker container with override', () => {
       expect(evalWith('docker exec my-app sudo apt install curl', {
-        trustedDockerContainers: ['my-app'],
+        trustedDockerContainers: toTargets(['my-app']),
         trustedContextOverrides: overrides,
       }).decision).toBe('allow');
     });
@@ -587,51 +591,166 @@ describe('evaluator', () => {
 
     it('allows sudo inside trusted kubectl context with override', () => {
       expect(evalWith('kubectl exec --context minikube my-pod -- sudo apt install curl', {
-        trustedKubectlContexts: ['minikube'],
+        trustedKubectlContexts: toTargets(['minikube']),
         trustedContextOverrides: overrides,
       }).decision).toBe('allow');
     });
 
     it('allows sudo inside trusted SSH host with override', () => {
       expect(evalWith('ssh devserver sudo apt install curl', {
-        trustedSSHHosts: ['devserver'],
+        trustedSSHHosts: toTargets(['devserver']),
         trustedContextOverrides: overrides,
       }).decision).toBe('allow');
     });
 
     it('allows sudo inside trusted sprite with override', () => {
       expect(evalWith('sprite exec -s my-sprite sudo apt install curl', {
-        trustedSprites: ['my-sprite'],
+        trustedSprites: toTargets(['my-sprite']),
         trustedContextOverrides: overrides,
       }).decision).toBe('allow');
     });
 
     it('allows sudo via bash -c inside trusted docker with override', () => {
       expect(evalWith('docker exec my-app bash -c "sudo apt install curl"', {
-        trustedDockerContainers: ['my-app'],
+        trustedDockerContainers: toTargets(['my-app']),
         trustedContextOverrides: overrides,
       }).decision).toBe('allow');
     });
 
     it('still denies non-overridden dangerous commands in remote context', () => {
       expect(evalWith('docker exec my-app shutdown now', {
-        trustedDockerContainers: ['my-app'],
+        trustedDockerContainers: toTargets(['my-app']),
         trustedContextOverrides: overrides,
       }).decision).toBe('deny');
     });
 
     it('does not apply overrides to untrusted containers', () => {
       expect(evalWith('docker exec unknown-app sudo apt install curl', {
-        trustedDockerContainers: ['my-app'],
+        trustedDockerContainers: toTargets(['my-app']),
         trustedContextOverrides: overrides,
       }).decision).toBe('ask');
     });
 
     it('supports alwaysDeny in context overrides', () => {
       expect(evalWith('docker exec my-app curl http://example.com', {
-        trustedDockerContainers: ['my-app'],
+        trustedDockerContainers: toTargets(['my-app']),
         trustedContextOverrides: { alwaysAllow: [], alwaysDeny: ['curl'], rules: [] },
       }).decision).toBe('deny');
+    });
+  });
+
+  describe('per-target trusted overrides', () => {
+    it('allowAll on docker container allows sudo, shutdown, etc.', () => {
+      expect(evalWith('docker exec dev-box sudo rm -rf /', {
+        trustedDockerContainers: [{ name: 'dev-box', allowAll: true }],
+      }).decision).toBe('allow');
+    });
+
+    it('allowAll on docker container allows shutdown', () => {
+      expect(evalWith('docker exec dev-box shutdown now', {
+        trustedDockerContainers: [{ name: 'dev-box', allowAll: true }],
+      }).decision).toBe('allow');
+    });
+
+    it('allowAll on sprite allows everything', () => {
+      expect(evalWith('sprite exec -s yudu-claw sudo apt install curl', {
+        trustedSprites: [{ name: 'yudu-claw', allowAll: true }],
+      }).decision).toBe('allow');
+    });
+
+    it('allowAll on SSH host allows everything', () => {
+      expect(evalWith('ssh devserver sudo rm -rf /', {
+        trustedSSHHosts: [{ name: 'devserver', allowAll: true }],
+      }).decision).toBe('allow');
+    });
+
+    it('allowAll on kubectl context allows everything', () => {
+      expect(evalWith('kubectl exec --context minikube my-pod -- sudo rm -rf /', {
+        trustedKubectlContexts: [{ name: 'minikube', allowAll: true }],
+      }).decision).toBe('allow');
+    });
+
+    it('per-target overrides allow sudo but global does not', () => {
+      expect(evalWith('docker exec dev-box sudo apt install curl', {
+        trustedDockerContainers: [{ name: 'dev-box', overrides: { alwaysAllow: ['sudo', 'apt'], alwaysDeny: [], rules: [] } }],
+      }).decision).toBe('allow');
+    });
+
+    it('per-target overrides do not affect other containers', () => {
+      expect(evalWith('docker exec other-box sudo apt install curl', {
+        trustedDockerContainers: [
+          { name: 'dev-box', overrides: { alwaysAllow: ['sudo'], alwaysDeny: [], rules: [] } },
+          { name: 'other-box' },
+        ],
+      }).decision).toBe('deny');
+    });
+
+    it('per-target overrides combine with global overrides', () => {
+      expect(evalWith('docker exec dev-box sudo systemctl restart app', {
+        trustedDockerContainers: [{ name: 'dev-box', overrides: { alwaysAllow: ['sudo'], alwaysDeny: [], rules: [] } }],
+        trustedContextOverrides: { alwaysAllow: ['systemctl'], alwaysDeny: [], rules: [] },
+      }).decision).toBe('allow');
+    });
+
+    it('per-target overrides take priority over global overrides', () => {
+      expect(evalWith('docker exec dev-box curl http://example.com', {
+        trustedDockerContainers: [{ name: 'dev-box', overrides: { alwaysAllow: [], alwaysDeny: ['curl'], rules: [] } }],
+        trustedContextOverrides: { alwaysAllow: ['curl'], alwaysDeny: [], rules: [] },
+      }).decision).toBe('deny');
+    });
+
+    it('string entries still work as before (backward compat)', () => {
+      expect(evalWith('docker exec my-app ls', {
+        trustedDockerContainers: toTargets(['my-app']),
+      }).decision).toBe('allow');
+    });
+
+    it('mixed string and object entries work together', () => {
+      const result1 = evalWith('docker exec my-app sudo apt install curl', {
+        trustedDockerContainers: [
+          { name: 'my-app' },
+          { name: 'dev-box', allowAll: true },
+        ],
+      });
+      expect(result1.decision).toBe('deny'); // my-app has no overrides, sudo denied
+
+      const result2 = evalWith('docker exec dev-box sudo apt install curl', {
+        trustedDockerContainers: [
+          { name: 'my-app' },
+          { name: 'dev-box', allowAll: true },
+        ],
+      });
+      expect(result2.decision).toBe('allow'); // dev-box has allowAll
+    });
+
+    it('allowAll on untrusted target has no effect', () => {
+      expect(evalWith('docker exec unknown-box sudo ls', {
+        trustedDockerContainers: [{ name: 'dev-box', allowAll: true }],
+      }).decision).toBe('ask');
+    });
+
+    it('SSH with per-host overrides', () => {
+      expect(evalWith('ssh staging-web systemctl restart app', {
+        trustedSSHHosts: [{ name: 'staging-*', overrides: { alwaysAllow: ['systemctl'], alwaysDeny: [], rules: [] } }],
+      }).decision).toBe('allow');
+    });
+
+    it('kubectl with per-context overrides', () => {
+      expect(evalWith('kubectl exec --context prod-cluster my-pod -- rm -rf /tmp/cache', {
+        trustedKubectlContexts: [{ name: 'prod-cluster', overrides: { alwaysAllow: [], alwaysDeny: ['rm'], rules: [] } }],
+      }).decision).toBe('deny');
+    });
+
+    it('sprite with per-sprite overrides', () => {
+      expect(evalWith('sprite exec -s dev-sprite sudo apt install vim', {
+        trustedSprites: [{ name: 'dev-*', overrides: { alwaysAllow: ['sudo', 'apt'], alwaysDeny: [], rules: [] } }],
+      }).decision).toBe('allow');
+    });
+
+    it('allowAll on glob-matched sprite', () => {
+      expect(evalWith('sprite exec -s dev-testing sudo shutdown now', {
+        trustedSprites: [{ name: 'dev-*', allowAll: true }],
+      }).decision).toBe('allow');
     });
   });
 });

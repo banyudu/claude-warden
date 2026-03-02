@@ -2,7 +2,7 @@ import { readFileSync, existsSync } from 'fs';
 import { parse as parseYaml } from 'yaml';
 import { homedir } from 'os';
 import { join } from 'path';
-import type { WardenConfig, ConfigLayer } from './types';
+import type { WardenConfig, ConfigLayer, TrustedTarget } from './types';
 import { DEFAULT_CONFIG } from './defaults';
 
 const USER_CONFIG_PATHS = [
@@ -83,18 +83,34 @@ function extractLayer(raw: Record<string, unknown>): ConfigLayer {
   };
 }
 
+export function parseTrustedList(raw: unknown[]): TrustedTarget[] {
+  return raw.map(entry => {
+    if (typeof entry === 'string') return { name: entry };
+    if (entry && typeof entry === 'object' && 'name' in entry) {
+      const obj = entry as Record<string, unknown>;
+      const target: TrustedTarget = { name: String(obj.name) };
+      if (obj.allowAll === true) target.allowAll = true;
+      if (obj.overrides && typeof obj.overrides === 'object') {
+        target.overrides = extractLayer(obj.overrides as Record<string, unknown>);
+      }
+      return target;
+    }
+    return null;
+  }).filter((t): t is TrustedTarget => t !== null);
+}
+
 function mergeNonLayerFields(config: WardenConfig, raw: Record<string, unknown>): void {
   if (Array.isArray(raw.trustedSSHHosts)) {
-    config.trustedSSHHosts = [...(config.trustedSSHHosts || []), ...raw.trustedSSHHosts];
+    config.trustedSSHHosts = [...(config.trustedSSHHosts || []), ...parseTrustedList(raw.trustedSSHHosts)];
   }
   if (Array.isArray(raw.trustedDockerContainers)) {
-    config.trustedDockerContainers = [...(config.trustedDockerContainers || []), ...raw.trustedDockerContainers];
+    config.trustedDockerContainers = [...(config.trustedDockerContainers || []), ...parseTrustedList(raw.trustedDockerContainers)];
   }
   if (Array.isArray(raw.trustedKubectlContexts)) {
-    config.trustedKubectlContexts = [...(config.trustedKubectlContexts || []), ...raw.trustedKubectlContexts];
+    config.trustedKubectlContexts = [...(config.trustedKubectlContexts || []), ...parseTrustedList(raw.trustedKubectlContexts)];
   }
   if (Array.isArray(raw.trustedSprites)) {
-    config.trustedSprites = [...(config.trustedSprites || []), ...raw.trustedSprites];
+    config.trustedSprites = [...(config.trustedSprites || []), ...parseTrustedList(raw.trustedSprites)];
   }
   if (typeof raw.defaultDecision === 'string') {
     config.defaultDecision = raw.defaultDecision as WardenConfig['defaultDecision'];

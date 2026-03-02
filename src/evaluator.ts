@@ -1,6 +1,6 @@
 import type {
   ParseResult, WardenConfig, EvalResult, Decision,
-  CommandEvalDetail, ParsedCommand, CommandRule,
+  CommandEvalDetail, ParsedCommand, CommandRule, TrustedTarget,
 } from './types';
 import { parseCommand } from './parser';
 
@@ -201,8 +201,12 @@ function globToRegex(pattern: string): RegExp {
   return new RegExp(`^${regex}$`);
 }
 
-function matchesPattern(value: string, patterns: string[]): boolean {
-  return patterns.some(p => globToRegex(p).test(value));
+function matchesPattern(value: string, targets: TrustedTarget[]): boolean {
+  return targets.some(t => globToRegex(t.name).test(value));
+}
+
+function findMatchingTarget(value: string, targets: TrustedTarget[]): TrustedTarget | null {
+  return targets.find(t => globToRegex(t.name).test(value)) || null;
 }
 
 interface SSHParseResult {
@@ -260,20 +264,22 @@ function evaluateSSHCommand(cmd: ParsedCommand, config: WardenConfig): CommandEv
 
   if (command === 'scp' || command === 'rsync') {
     const host = extractHostFromRemotePath(args);
-    if (host && matchesPattern(host, trustedHosts)) {
-      return {
-        command, args,
-        decision: 'allow',
-        reason: `Trusted SSH host "${host}"`,
-        matchedRule: 'trustedSSHHosts',
-      };
-    }
-    return null; // fall through to normal rules
+    if (!host) return null;
+    const target = findMatchingTarget(host, trustedHosts);
+    if (!target) return null;
+    return {
+      command, args,
+      decision: 'allow',
+      reason: `Trusted SSH host "${host}"`,
+      matchedRule: 'trustedSSHHosts',
+    };
   }
 
   // ssh
   const { host, remoteCommand } = parseSSHArgs(args);
-  if (!host || !matchesPattern(host, trustedHosts)) return null;
+  if (!host) return null;
+  const target = findMatchingTarget(host, trustedHosts);
+  if (!target) return null;
 
   // Trusted host, no remote command
   if (!remoteCommand) {
@@ -286,8 +292,16 @@ function evaluateSSHCommand(cmd: ParsedCommand, config: WardenConfig): CommandEv
   }
 
   // Trusted host with remote command — recursively evaluate with context overrides
+  if (target.allowAll) {
+    return {
+      command, args,
+      decision: 'allow',
+      reason: `Trusted SSH host "${host}" (allowAll)`,
+      matchedRule: 'trustedSSHHosts',
+    };
+  }
   const parsed = parseCommand(remoteCommand);
-  const result = evaluate(parsed, configWithContextOverrides(config));
+  const result = evaluate(parsed, configWithContextOverrides(config, target));
   return {
     command, args,
     decision: result.decision,
@@ -312,11 +326,16 @@ interface ExecParseResult {
 const INTERACTIVE_SHELLS = new Set(['bash', 'sh', 'zsh']);
 
 /** Build a config with trustedContextOverrides applied as the highest-priority layer. */
-function configWithContextOverrides(config: WardenConfig): WardenConfig {
-  if (!config.trustedContextOverrides) return config;
+function configWithContextOverrides(config: WardenConfig, target?: TrustedTarget | null): WardenConfig {
+  const overrideLayers = [];
+  // Per-target overrides take highest priority
+  if (target?.overrides) overrideLayers.push(target.overrides);
+  // Global overrides are baseline
+  if (config.trustedContextOverrides) overrideLayers.push(config.trustedContextOverrides);
+  if (overrideLayers.length === 0) return config;
   return {
     ...config,
-    layers: [config.trustedContextOverrides, ...config.layers],
+    layers: [...overrideLayers, ...config.layers],
   };
 }
 
@@ -328,8 +347,12 @@ function configWithContextOverrides(config: WardenConfig): WardenConfig {
 function evaluateRemoteCommand(
   remoteArgs: string[],
   config: WardenConfig,
+  target?: TrustedTarget | null,
 ): EvalResult {
-  const overriddenConfig = configWithContextOverrides(config);
+  if (target?.allowAll) {
+    return { decision: 'allow', reason: 'allowAll target', details: [] };
+  }
+  const overriddenConfig = configWithContextOverrides(config, target);
 
   if (remoteArgs.length === 0) {
     return { decision: 'allow', reason: 'interactive', details: [] };
@@ -351,9 +374,10 @@ function evaluateRemoteCommand(
 
   // Normal command — construct a ParsedCommand directly from structured args
   const parsed: ParseResult = {
-    commands: [{ command: remoteCmd, args: remoteArgs.slice(1) }],
+    commands: [{ command: remoteCmd, args: remoteArgs.slice(1), envPrefixes: [], raw: remoteArgs.join(' ') }],
     hasSubshell: false,
     subshellCommands: [],
+    parseError: false,
   };
   return evaluate(parsed, overriddenConfig);
 }
@@ -392,14 +416,16 @@ function evaluateDockerExec(cmd: ParsedCommand, config: WardenConfig): CommandEv
   const { command, args } = cmd;
   if (args[0] !== 'exec') return null;
 
-  const { target, remoteArgs } = parseDockerExecArgs(args.slice(1));
-  if (!target || !matchesPattern(target, config.trustedDockerContainers || [])) return null;
+  const { target: containerName, remoteArgs } = parseDockerExecArgs(args.slice(1));
+  if (!containerName) return null;
+  const matched = findMatchingTarget(containerName, config.trustedDockerContainers || []);
+  if (!matched) return null;
 
-  const result = evaluateRemoteCommand(remoteArgs, config);
+  const result = evaluateRemoteCommand(remoteArgs, config, matched);
   return {
     command, args,
     decision: result.decision,
-    reason: `Trusted Docker container "${target}" (${result.reason})`,
+    reason: `Trusted Docker container "${containerName}" (${result.reason})`,
     matchedRule: 'trustedDockerContainers',
   };
 }
@@ -466,12 +492,11 @@ function evaluateKubectlExec(cmd: ParsedCommand, config: WardenConfig): CommandE
   if (args[0] !== 'exec') return null;
 
   const { context, pod, remoteArgs } = parseKubectlExecArgs(args.slice(1));
-  const trustedContexts = config.trustedKubectlContexts || [];
+  if (!context) return null;
+  const matched = findMatchingTarget(context, config.trustedKubectlContexts || []);
+  if (!matched) return null;
 
-  // Must have a context (explicit or matched) to whitelist
-  if (!context || !matchesPattern(context, trustedContexts)) return null;
-
-  const result = evaluateRemoteCommand(remoteArgs, config);
+  const result = evaluateRemoteCommand(remoteArgs, config, matched);
   return {
     command, args,
     decision: result.decision,
@@ -548,11 +573,11 @@ function parseSpriteExecArgs(args: string[]): { spriteName: string | null; remot
 function evaluateSpriteExec(cmd: ParsedCommand, config: WardenConfig): CommandEvalDetail | null {
   const { command, args } = cmd;
   const { spriteName, remoteArgs } = parseSpriteExecArgs(args);
-  const trustedSprites = config.trustedSprites || [];
+  if (!spriteName) return null;
+  const matched = findMatchingTarget(spriteName, config.trustedSprites || []);
+  if (!matched) return null;
 
-  if (!spriteName || !matchesPattern(spriteName, trustedSprites)) return null;
-
-  const result = evaluateRemoteCommand(remoteArgs, config);
+  const result = evaluateRemoteCommand(remoteArgs, config, matched);
   return {
     command, args,
     decision: result.decision,

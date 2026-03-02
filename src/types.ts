@@ -46,12 +46,18 @@ export interface ConfigLayer {
   rules: CommandRule[];
 }
 
+export interface TrustedTarget {
+  name: string;
+  allowAll?: boolean;
+  overrides?: ConfigLayer;
+}
+
 export interface WardenConfig {
   layers: ConfigLayer[];
-  trustedSSHHosts?: string[];
-  trustedDockerContainers?: string[];
-  trustedKubectlContexts?: string[];
-  trustedSprites?: string[];
+  trustedSSHHosts?: TrustedTarget[];
+  trustedDockerContainers?: TrustedTarget[];
+  trustedKubectlContexts?: TrustedTarget[];
+  trustedSprites?: TrustedTarget[];
   trustedContextOverrides?: ConfigLayer;
   defaultDecision: Decision;
   askOnSubshell: boolean;

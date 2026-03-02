@@ -27,29 +27,45 @@ askOnSubshell: true
 # Trusted SSH hosts — ssh/scp/rsync to these hosts are auto-allowed.
 # Remote commands on trusted hosts are recursively evaluated through warden rules.
 # Supports glob patterns (* wildcards).
+# Entries can be strings (use global overrides) or objects with per-target settings.
 # trustedSSHHosts:
-#   - devserver
+#   - devserver                          # string → uses global overrides only
 #   - staging-*
 #   - "*.internal.company.com"
-#   - 192.168.1.*
+#   - name: prod-bastion                 # object with per-target overrides
+#     overrides:
+#       alwaysAllow: [systemctl]
 
 # Trusted Docker containers — docker exec to these containers are auto-allowed.
 # Remote commands are recursively evaluated through warden rules.
 # trustedDockerContainers:
-#   - my-app
-#   - dev-*
+#   - my-app                             # string → uses global overrides only
+#   - name: dev-container                # object with allowAll (skip all checks)
+#     allowAll: true
+#   - name: staging-*                    # object with per-target overrides
+#     overrides:
+#       alwaysAllow: [sudo, apt]
 
 # Trusted kubectl contexts — kubectl exec in these contexts are auto-allowed.
 # Remote commands (after --) are recursively evaluated through warden rules.
 # trustedKubectlContexts:
 #   - minikube
-#   - dev-cluster-*
+#   - name: dev-cluster-*
+#     overrides:
+#       alwaysAllow: [sudo]
+#   - name: prod-cluster
+#     overrides:
+#       alwaysDeny: [rm]
 
 # Trusted Sprites — sprite exec/console to these sprites are auto-allowed.
 # Remote commands are recursively evaluated through warden rules.
 # trustedSprites:
-#   - my-sprite
-#   - dev-*
+#   - my-sprite                          # string → uses global overrides only
+#   - name: yudu-claw                    # allowAll: skip all checks (disposable env)
+#     allowAll: true
+#   - name: dev-*                        # per-target overrides
+#     overrides:
+#       alwaysAllow: [sudo, apt]
 
 # Override rules when evaluating commands inside trusted remote contexts
 # (docker exec, kubectl exec, ssh, sprite exec). These overrides are applied
