@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.5.0] - 2026-03-02
+
+### Features
+- Send OS notifications on ask/deny decisions (43565f7)
+  - macOS: terminal-notifier with click-to-activate terminal, osascript fallback
+  - Linux: notify-send
+  - Configurable via `notifyOnAsk` and `notifyOnDeny` config flags (both default to `true`)
+  - Terminal detection: iTerm2, Terminal.app, Alacritty, WezTerm
+
 ## [1.4.0] - 2026-03-02
 
 ### Features
