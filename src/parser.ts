@@ -71,6 +71,67 @@ function preprocessCatHeredocs(input: string): string {
   return input.replace(regex, '__HEREDOC_TEXT__');
 }
 
+/**
+ * Quote unquoted parentheses in path-like tokens so bash-parser doesn't
+ * choke on them. Targets patterns like `foo/(bar)/baz` where parens are
+ * clearly part of a file path (e.g. Next.js route groups).
+ *
+ * Strategy: find unquoted tokens that contain `/` adjacent to `(` or `)`,
+ * and wrap the entire token in double quotes.
+ */
+function preprocessPathParentheses(input: string): string {
+  // Split into segments respecting quotes — we only touch unquoted parts
+  const result: string[] = [];
+  let i = 0;
+  while (i < input.length) {
+    const ch = input[i];
+    // Preserve quoted strings as-is
+    if (ch === '"' || ch === "'") {
+      const quote = ch;
+      let j = i + 1;
+      while (j < input.length && input[j] !== quote) {
+        if (input[j] === '\\' && quote === '"') j++; // skip escaped char in double quotes
+        j++;
+      }
+      result.push(input.slice(i, j + 1));
+      i = j + 1;
+      continue;
+    }
+    // Preserve $(...) as-is (command substitution)
+    if (ch === '$' && i + 1 < input.length && input[i + 1] === '(') {
+      let depth = 1;
+      let j = i + 2;
+      while (j < input.length && depth > 0) {
+        if (input[j] === '(') depth++;
+        else if (input[j] === ')') depth--;
+        if (depth > 0) j++;
+      }
+      result.push(input.slice(i, j + 1));
+      i = j + 1;
+      continue;
+    }
+    // Collect an unquoted token (non-whitespace, non-shell-operator segment)
+    if (ch !== ' ' && ch !== '\t' && ch !== '\n') {
+      let j = i;
+      while (j < input.length && !' \t\n'.includes(input[j]) && input[j] !== '"' && input[j] !== "'" && !(input[j] === '$' && j + 1 < input.length && input[j + 1] === '(')) {
+        j++;
+      }
+      const token = input.slice(i, j);
+      // Quote if it looks like a path with parentheses: contains / and ( or )
+      if (token.includes('/') && /[()]/.test(token) && !/^[<>|;&]/.test(token)) {
+        result.push('"' + token + '"');
+      } else {
+        result.push(token);
+      }
+      i = j;
+      continue;
+    }
+    result.push(ch);
+    i++;
+  }
+  return result.join('');
+}
+
 function convertCommand(node: CommandNode): ParsedCommand | null {
   if (!node.name) return null;
 
@@ -267,6 +328,9 @@ export function parseCommand(input: string): ParseResult {
   // string interpolation, not arbitrary subshells. Replace with placeholder text
   // so the parser sees clean commands (e.g. `gh pr create --body "__HEREDOC_TEXT__"`).
   input = preprocessCatHeredocs(input);
+
+  // Quote unquoted parentheses in path-like tokens (e.g. Next.js route groups)
+  input = preprocessPathParentheses(input);
 
   try {
     const ast = parse(input) as ScriptNode;

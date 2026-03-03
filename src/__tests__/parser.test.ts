@@ -216,4 +216,50 @@ describe('parseCommand', () => {
     expect(result.commands.length).toBeGreaterThanOrEqual(1);
     expect(result.commands[0].command).toBe('cat');
   });
+
+  // --- Path parentheses (e.g. Next.js route groups) ---
+
+  it('handles unquoted parentheses in file paths', () => {
+    const result = parseCommand('cd /path/to/project && git show HEAD -- apps/mobile/app/(app)/_layout.tsx | head -100');
+    expect(result.parseError).toBe(false);
+    expect(result.commands).toHaveLength(3);
+    expect(result.commands[0].command).toBe('cd');
+    expect(result.commands[1].command).toBe('git');
+    expect(result.commands[2].command).toBe('head');
+  });
+
+  it('handles simple path with parentheses', () => {
+    const result = parseCommand('ls apps/(app)');
+    expect(result.parseError).toBe(false);
+    expect(result.commands).toHaveLength(1);
+    expect(result.commands[0].command).toBe('ls');
+  });
+
+  it('handles multiple path-parens tokens', () => {
+    const result = parseCommand('diff src/(auth)/page.tsx src/(public)/page.tsx');
+    expect(result.parseError).toBe(false);
+    expect(result.commands).toHaveLength(1);
+    expect(result.commands[0].command).toBe('diff');
+  });
+
+  it('preserves already-quoted paths with parentheses', () => {
+    const result = parseCommand('git diff -- "src/(auth)/page.tsx"');
+    expect(result.parseError).toBe(false);
+    expect(result.commands).toHaveLength(1);
+    expect(result.commands[0].command).toBe('git');
+  });
+
+  it('does not affect $() command substitution', () => {
+    const result = parseCommand('echo $(date)');
+    expect(result.parseError).toBe(false);
+    expect(result.hasSubshell).toBe(true);
+    expect(result.commands).toHaveLength(1);
+    expect(result.commands[0].command).toBe('echo');
+  });
+
+  it('does not affect actual subshell syntax', () => {
+    const result = parseCommand('echo hello && (cd /tmp && ls)');
+    expect(result.parseError).toBe(false);
+    expect(result.hasSubshell).toBe(true);
+  });
 });

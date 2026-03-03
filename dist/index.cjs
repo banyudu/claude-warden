@@ -18143,6 +18143,53 @@ function preprocessCatHeredocs(input) {
   const regex = /\$\(cat\s+<<-?\s*['"]?(\w+)['"]?\n([\s\S]*?)\n\1\s*\)/g;
   return input.replace(regex, "__HEREDOC_TEXT__");
 }
+function preprocessPathParentheses(input) {
+  const result = [];
+  let i = 0;
+  while (i < input.length) {
+    const ch = input[i];
+    if (ch === '"' || ch === "'") {
+      const quote = ch;
+      let j = i + 1;
+      while (j < input.length && input[j] !== quote) {
+        if (input[j] === "\\" && quote === '"') j++;
+        j++;
+      }
+      result.push(input.slice(i, j + 1));
+      i = j + 1;
+      continue;
+    }
+    if (ch === "$" && i + 1 < input.length && input[i + 1] === "(") {
+      let depth = 1;
+      let j = i + 2;
+      while (j < input.length && depth > 0) {
+        if (input[j] === "(") depth++;
+        else if (input[j] === ")") depth--;
+        if (depth > 0) j++;
+      }
+      result.push(input.slice(i, j + 1));
+      i = j + 1;
+      continue;
+    }
+    if (ch !== " " && ch !== "	" && ch !== "\n") {
+      let j = i;
+      while (j < input.length && !" 	\n".includes(input[j]) && input[j] !== '"' && input[j] !== "'" && !(input[j] === "$" && j + 1 < input.length && input[j + 1] === "(")) {
+        j++;
+      }
+      const token = input.slice(i, j);
+      if (token.includes("/") && /[()]/.test(token) && !/^[<>|;&]/.test(token)) {
+        result.push('"' + token + '"');
+      } else {
+        result.push(token);
+      }
+      i = j;
+      continue;
+    }
+    result.push(ch);
+    i++;
+  }
+  return result.join("");
+}
 function convertCommand(node) {
   if (!node.name) return null;
   const originalCommand = node.name.text;
@@ -18290,6 +18337,7 @@ function parseCommand(input) {
     return { commands: [], hasSubshell: false, subshellCommands: [], parseError: false };
   }
   input = preprocessCatHeredocs(input);
+  input = preprocessPathParentheses(input);
   try {
     const ast = (0, import_bash_parser.default)(input);
     const result = { commands: [], hasSubshell: false, subshellCommands: [] };
