@@ -18145,7 +18145,8 @@ function preprocessCatHeredocs(input) {
 }
 function convertCommand(node) {
   if (!node.name) return null;
-  const command = node.name.text.includes("/") ? (0, import_path.basename)(node.name.text) : node.name.text;
+  const originalCommand = node.name.text;
+  const command = originalCommand.includes("/") ? (0, import_path.basename)(originalCommand) : originalCommand;
   const envPrefixes = [];
   if (node.prefix) {
     for (const p of node.prefix) {
@@ -18168,7 +18169,7 @@ function convertCommand(node) {
     ...args2
   ];
   const raw = rawParts.join(" ");
-  return { command, args: args2, envPrefixes, raw };
+  return { command, originalCommand, args: args2, envPrefixes, raw };
 }
 function collectCommandExpansions(node) {
   const commands = [];
@@ -18335,6 +18336,16 @@ function parseCommand(input) {
 }
 
 // src/evaluator.ts
+var import_os = require("os");
+function commandMatchesName(cmd, name) {
+  if (name.startsWith("/")) {
+    return cmd.originalCommand === name;
+  }
+  if (name.startsWith("~/")) {
+    return cmd.originalCommand === (0, import_os.homedir)() + name.slice(1);
+  }
+  return cmd.command === name;
+}
 function evaluate(parsed, config) {
   if (parsed.parseError) {
     return { decision: "ask", reason: "Could not parse command safely", details: [] };
@@ -18382,10 +18393,10 @@ function evaluate(parsed, config) {
 function evaluateCommand(cmd, config) {
   const { command, args: args2 } = cmd;
   for (const layer of config.layers) {
-    if (layer.alwaysDeny.includes(command)) {
+    if (layer.alwaysDeny.some((name) => commandMatchesName(cmd, name))) {
       return { command, args: args2, decision: "deny", reason: `"${command}" is blocked`, matchedRule: "alwaysDeny" };
     }
-    if (layer.alwaysAllow.includes(command)) {
+    if (layer.alwaysAllow.some((name) => commandMatchesName(cmd, name))) {
       return { command, args: args2, decision: "allow", reason: `"${command}" is safe`, matchedRule: "alwaysAllow" };
     }
   }
@@ -18406,7 +18417,7 @@ function evaluateCommand(cmd, config) {
     if (spriteResult) return spriteResult;
   }
   for (const layer of config.layers) {
-    const rule = layer.rules.find((r) => r.command === command);
+    const rule = layer.rules.find((r) => commandMatchesName(cmd, r.command));
     if (rule) {
       return evaluateRule(cmd, rule);
     }
@@ -18642,7 +18653,7 @@ function evaluateRemoteCommand(remoteArgs, config, target) {
     return evaluate(parsed2, overriddenConfig);
   }
   const parsed = {
-    commands: [{ command: remoteCmd, args: remoteArgs.slice(1), envPrefixes: [], raw: remoteArgs.join(" ") }],
+    commands: [{ command: remoteCmd, originalCommand: remoteCmd, args: remoteArgs.slice(1), envPrefixes: [], raw: remoteArgs.join(" ") }],
     hasSubshell: false,
     subshellCommands: [],
     parseError: false
@@ -18842,7 +18853,7 @@ function evaluateSpriteExec(cmd, config) {
 // src/rules.ts
 var import_fs = require("fs");
 var import_yaml = __toESM(require_dist2(), 1);
-var import_os = require("os");
+var import_os2 = require("os");
 var import_path2 = require("path");
 
 // src/defaults.ts
@@ -19486,8 +19497,8 @@ var DEFAULT_CONFIG = {
 
 // src/rules.ts
 var USER_CONFIG_PATHS = [
-  (0, import_path2.join)((0, import_os.homedir)(), ".claude", "warden.yaml"),
-  (0, import_path2.join)((0, import_os.homedir)(), ".claude", "warden.json")
+  (0, import_path2.join)((0, import_os2.homedir)(), ".claude", "warden.yaml"),
+  (0, import_path2.join)((0, import_os2.homedir)(), ".claude", "warden.json")
 ];
 var PROJECT_CONFIG_NAMES = [
   ".claude/warden.yaml",

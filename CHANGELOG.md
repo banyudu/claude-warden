@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.5.2] - 2026-03-03
+
+### Features
+- Support full-path whitelist in command matching (aabf2c0)
+  - Allow `alwaysAllow`, `alwaysDeny`, and `rules` to specify full paths (e.g., `/home/user/bin/my-script.sh`)
+  - Full-path entries match only the exact command path; basename matching preserved for entries without slashes
+  - Supports `~` expansion for home directory paths
+  - Closes #3
+- Update dependencies to latest versions (49a5d87)
+
+### Bug Fixes
+- Specify pnpm version in CI workflow (f0e7594)
+
+### Other Changes
+- Add CI workflow (0f424d8)
+- Add badges to README (11e9592)
+
 ## [1.5.1] - 2026-03-02
 
 ### Bug Fixes
