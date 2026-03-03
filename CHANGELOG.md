@@ -7,7 +7,7 @@
   - bash-parser treats `(` `)` as shell metacharacters, causing parse failures for paths like `apps/(app)/_layout.tsx`
   - Added preprocessing step that auto-quotes path-like tokens containing parentheses
   - Preserves `$()` command substitution and actual subshell syntax
-  - Closes #1
+  - Closes #4
 
 ## [1.5.2] - 2026-03-03
 
