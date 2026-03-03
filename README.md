@@ -1,5 +1,11 @@
 # Claude Warden
 
+[![npm version](https://img.shields.io/npm/v/claude-warden)](https://www.npmjs.com/package/claude-warden)
+[![npm downloads](https://img.shields.io/npm/dm/claude-warden)](https://www.npmjs.com/package/claude-warden)
+[![GitHub license](https://img.shields.io/github/license/banyudu/claude-warden)](https://github.com/banyudu/claude-warden/blob/main/LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/banyudu/claude-warden)](https://github.com/banyudu/claude-warden/stargazers)
+[![CI](https://img.shields.io/github/actions/workflow/status/banyudu/claude-warden/ci.yml?label=CI)](https://github.com/banyudu/claude-warden/actions)
+
 Smart command safety filter for [Claude Code](https://claude.ai/code). Parses shell commands, evaluates each against configurable safety rules, and returns allow/deny/ask decisions — eliminating unnecessary permission prompts while blocking dangerous commands.
 
 ## The problem
