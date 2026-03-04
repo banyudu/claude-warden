@@ -30,7 +30,13 @@ function commandMatchesName(cmd: ParsedCommand, name: string): boolean {
   return cmd.command === name;
 }
 
-export function evaluate(parsed: ParseResult, config: WardenConfig): EvalResult {
+const MAX_RECURSION_DEPTH = 10;
+
+export function evaluate(parsed: ParseResult, config: WardenConfig, depth: number = 0): EvalResult {
+  if (depth > MAX_RECURSION_DEPTH) {
+    return { decision: 'ask', reason: 'Maximum recursion depth exceeded', details: [] };
+  }
+
   if (parsed.parseError) {
     return { decision: 'ask', reason: 'Could not parse command safely', details: [] };
   }
@@ -43,7 +49,7 @@ export function evaluate(parsed: ParseResult, config: WardenConfig): EvalResult 
   if (parsed.hasSubshell && parsed.subshellCommands.length > 0) {
     for (const subCmd of parsed.subshellCommands) {
       const subParsed = parseCommand(subCmd);
-      const subResult = evaluate(subParsed, config);
+      const subResult = evaluate(subParsed, config, depth + 1);
       if (subResult.decision === 'deny') {
         return { decision: 'deny', reason: `Subshell command: ${subResult.reason}`, details: subResult.details };
       }
@@ -58,7 +64,7 @@ export function evaluate(parsed: ParseResult, config: WardenConfig): EvalResult 
 
   const details: CommandEvalDetail[] = [];
   for (const cmd of parsed.commands) {
-    details.push(evaluateCommand(cmd, config));
+    details.push(evaluateCommand(cmd, config, depth));
   }
 
   // Combine: deny > ask > allow
@@ -85,7 +91,7 @@ export function evaluate(parsed: ParseResult, config: WardenConfig): EvalResult 
   return { decision: 'allow', reason: 'All commands are safe', details };
 }
 
-function evaluateCommand(cmd: ParsedCommand, config: WardenConfig): CommandEvalDetail {
+function evaluateCommand(cmd: ParsedCommand, config: WardenConfig, depth: number = 0): CommandEvalDetail {
   const { command, args } = cmd;
 
   // 1. Scoped alwaysDeny → alwaysAllow per layer (workspace > user > default)
@@ -100,19 +106,19 @@ function evaluateCommand(cmd: ParsedCommand, config: WardenConfig): CommandEvalD
 
   // 2. Remote target whitelisting with recursive command evaluation
   if ((command === 'ssh' || command === 'scp' || command === 'rsync') && config.trustedSSHHosts?.length) {
-    const sshResult = evaluateSSHCommand(cmd, config);
+    const sshResult = evaluateSSHCommand(cmd, config, depth);
     if (sshResult) return sshResult;
   }
   if (command === 'docker' && config.trustedDockerContainers?.length) {
-    const dockerResult = evaluateDockerExec(cmd, config);
+    const dockerResult = evaluateDockerExec(cmd, config, depth);
     if (dockerResult) return dockerResult;
   }
   if (command === 'kubectl' && config.trustedKubectlContexts?.length) {
-    const kubectlResult = evaluateKubectlExec(cmd, config);
+    const kubectlResult = evaluateKubectlExec(cmd, config, depth);
     if (kubectlResult) return kubectlResult;
   }
   if (command === 'sprite' && config.trustedSprites?.length) {
-    const spriteResult = evaluateSpriteExec(cmd, config);
+    const spriteResult = evaluateSpriteExec(cmd, config, depth);
     if (spriteResult) return spriteResult;
   }
 
@@ -284,7 +290,7 @@ function extractHostFromRemotePath(args: string[]): string | null {
   return null;
 }
 
-function evaluateSSHCommand(cmd: ParsedCommand, config: WardenConfig): CommandEvalDetail | null {
+function evaluateSSHCommand(cmd: ParsedCommand, config: WardenConfig, depth: number = 0): CommandEvalDetail | null {
   const { command, args } = cmd;
   const trustedHosts = config.trustedSSHHosts || [];
 
@@ -327,7 +333,7 @@ function evaluateSSHCommand(cmd: ParsedCommand, config: WardenConfig): CommandEv
     };
   }
   const parsed = parseCommand(remoteCommand);
-  const result = evaluate(parsed, configWithContextOverrides(config, target));
+  const result = evaluate(parsed, configWithContextOverrides(config, target), depth + 1);
   return {
     command, args,
     decision: result.decision,
@@ -374,6 +380,7 @@ function evaluateRemoteCommand(
   remoteArgs: string[],
   config: WardenConfig,
   target?: TrustedTarget | null,
+  depth: number = 0,
 ): EvalResult {
   if (target?.allowAll) {
     return { decision: 'allow', reason: 'allowAll target', details: [] };
@@ -395,7 +402,7 @@ function evaluateRemoteCommand(
   if (INTERACTIVE_SHELLS.has(remoteCmd) && remoteArgs[1] === '-c' && remoteArgs.length >= 3) {
     const innerCommand = remoteArgs.slice(2).join(' ');
     const parsed = parseCommand(innerCommand);
-    return evaluate(parsed, overriddenConfig);
+    return evaluate(parsed, overriddenConfig, depth + 1);
   }
 
   // Normal command — construct a ParsedCommand directly from structured args
@@ -405,7 +412,7 @@ function evaluateRemoteCommand(
     subshellCommands: [],
     parseError: false,
   };
-  return evaluate(parsed, overriddenConfig);
+  return evaluate(parsed, overriddenConfig, depth + 1);
 }
 
 function parseDockerExecArgs(args: string[]): ExecParseResult {
@@ -438,7 +445,7 @@ function parseDockerExecArgs(args: string[]): ExecParseResult {
   return { target, remoteArgs };
 }
 
-function evaluateDockerExec(cmd: ParsedCommand, config: WardenConfig): CommandEvalDetail | null {
+function evaluateDockerExec(cmd: ParsedCommand, config: WardenConfig, depth: number = 0): CommandEvalDetail | null {
   const { command, args } = cmd;
   if (args[0] !== 'exec') return null;
 
@@ -447,7 +454,7 @@ function evaluateDockerExec(cmd: ParsedCommand, config: WardenConfig): CommandEv
   const matched = findMatchingTarget(containerName, config.trustedDockerContainers || []);
   if (!matched) return null;
 
-  const result = evaluateRemoteCommand(remoteArgs, config, matched);
+  const result = evaluateRemoteCommand(remoteArgs, config, matched, depth);
   return {
     command, args,
     decision: result.decision,
@@ -513,7 +520,7 @@ function parseKubectlExecArgs(args: string[]): { context: string | null; pod: st
   return { context, pod, remoteArgs };
 }
 
-function evaluateKubectlExec(cmd: ParsedCommand, config: WardenConfig): CommandEvalDetail | null {
+function evaluateKubectlExec(cmd: ParsedCommand, config: WardenConfig, depth: number = 0): CommandEvalDetail | null {
   const { command, args } = cmd;
   if (args[0] !== 'exec') return null;
 
@@ -522,7 +529,7 @@ function evaluateKubectlExec(cmd: ParsedCommand, config: WardenConfig): CommandE
   const matched = findMatchingTarget(context, config.trustedKubectlContexts || []);
   if (!matched) return null;
 
-  const result = evaluateRemoteCommand(remoteArgs, config, matched);
+  const result = evaluateRemoteCommand(remoteArgs, config, matched, depth);
   return {
     command, args,
     decision: result.decision,
@@ -596,14 +603,14 @@ function parseSpriteExecArgs(args: string[]): { spriteName: string | null; remot
   return { spriteName, remoteArgs };
 }
 
-function evaluateSpriteExec(cmd: ParsedCommand, config: WardenConfig): CommandEvalDetail | null {
+function evaluateSpriteExec(cmd: ParsedCommand, config: WardenConfig, depth: number = 0): CommandEvalDetail | null {
   const { command, args } = cmd;
   const { spriteName, remoteArgs } = parseSpriteExecArgs(args);
   if (!spriteName) return null;
   const matched = findMatchingTarget(spriteName, config.trustedSprites || []);
   if (!matched) return null;
 
-  const result = evaluateRemoteCommand(remoteArgs, config, matched);
+  const result = evaluateRemoteCommand(remoteArgs, config, matched, depth);
   return {
     command, args,
     decision: result.decision,
