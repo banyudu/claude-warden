@@ -122,16 +122,48 @@ function evaluateCommand(cmd: ParsedCommand, config: WardenConfig, depth: number
     if (spriteResult) return spriteResult;
   }
 
-  // 3. Scoped command rules (first layer with a matching rule wins)
-  for (const layer of config.layers) {
-    const rule = layer.rules.find(r => commandMatchesName(cmd, r.command));
-    if (rule) {
-      return evaluateRule(cmd, rule);
-    }
+  // 3. Scoped command rules — collect and merge across layers
+  const mergedRule = collectMergedRule(cmd, config);
+  if (mergedRule) {
+    return evaluateRule(cmd, mergedRule);
   }
 
   // 4. Default
   return { command, args, decision: config.defaultDecision, reason: `No rule for "${command}"`, matchedRule: 'default' };
+}
+
+/**
+ * Collect matching rules across all layers and merge them.
+ * Rules are merged by concatenating argPatterns in layer priority order.
+ * The `default` decision comes from the highest-priority layer that defines a rule.
+ * If any rule has `override: true`, stop collecting from lower layers.
+ */
+function collectMergedRule(cmd: ParsedCommand, config: WardenConfig): CommandRule | null {
+  const matchingRules: CommandRule[] = [];
+
+  for (const layer of config.layers) {
+    const rule = layer.rules.find(r => commandMatchesName(cmd, r.command));
+    if (rule) {
+      matchingRules.push(rule);
+      if (rule.override) break;
+    }
+  }
+
+  if (matchingRules.length === 0) return null;
+  if (matchingRules.length === 1) return matchingRules[0];
+
+  const mergedPatterns: CommandRule['argPatterns'] = [];
+  for (const rule of matchingRules) {
+    if (rule.argPatterns) {
+      mergedPatterns.push(...rule.argPatterns);
+    }
+  }
+
+  return {
+    command: matchingRules[0].command,
+    default: matchingRules[0].default,
+    argPatterns: mergedPatterns,
+  };
 }
 
 function evaluateRule(cmd: ParsedCommand, rule: CommandRule): CommandEvalDetail {

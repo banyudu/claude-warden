@@ -18385,6 +18385,15 @@ function parseCommand(input) {
 
 // src/evaluator.ts
 var import_os = require("os");
+function safeRegexTest(pattern, input) {
+  try {
+    return new RegExp(pattern).test(input);
+  } catch {
+    process.stderr.write(`[warden] Warning: invalid regex pattern: ${pattern}
+`);
+    return false;
+  }
+}
 function commandMatchesName(cmd, name) {
   if (name.startsWith("/")) {
     return cmd.originalCommand === name;
@@ -18394,7 +18403,11 @@ function commandMatchesName(cmd, name) {
   }
   return cmd.command === name;
 }
-function evaluate(parsed, config) {
+var MAX_RECURSION_DEPTH = 10;
+function evaluate(parsed, config, depth = 0) {
+  if (depth > MAX_RECURSION_DEPTH) {
+    return { decision: "ask", reason: "Maximum recursion depth exceeded", details: [] };
+  }
   if (parsed.parseError) {
     return { decision: "ask", reason: "Could not parse command safely", details: [] };
   }
@@ -18404,7 +18417,7 @@ function evaluate(parsed, config) {
   if (parsed.hasSubshell && parsed.subshellCommands.length > 0) {
     for (const subCmd of parsed.subshellCommands) {
       const subParsed = parseCommand(subCmd);
-      const subResult = evaluate(subParsed, config);
+      const subResult = evaluate(subParsed, config, depth + 1);
       if (subResult.decision === "deny") {
         return { decision: "deny", reason: `Subshell command: ${subResult.reason}`, details: subResult.details };
       }
@@ -18417,7 +18430,7 @@ function evaluate(parsed, config) {
   }
   const details = [];
   for (const cmd of parsed.commands) {
-    details.push(evaluateCommand(cmd, config));
+    details.push(evaluateCommand(cmd, config, depth));
   }
   const decisions = details.map((d) => d.decision);
   if (decisions.includes("deny")) {
@@ -18438,7 +18451,7 @@ function evaluate(parsed, config) {
   }
   return { decision: "allow", reason: "All commands are safe", details };
 }
-function evaluateCommand(cmd, config) {
+function evaluateCommand(cmd, config, depth = 0) {
   const { command, args: args2 } = cmd;
   for (const layer of config.layers) {
     if (layer.alwaysDeny.some((name) => commandMatchesName(cmd, name))) {
@@ -18449,28 +18462,49 @@ function evaluateCommand(cmd, config) {
     }
   }
   if ((command === "ssh" || command === "scp" || command === "rsync") && config.trustedSSHHosts?.length) {
-    const sshResult = evaluateSSHCommand(cmd, config);
+    const sshResult = evaluateSSHCommand(cmd, config, depth);
     if (sshResult) return sshResult;
   }
   if (command === "docker" && config.trustedDockerContainers?.length) {
-    const dockerResult = evaluateDockerExec(cmd, config);
+    const dockerResult = evaluateDockerExec(cmd, config, depth);
     if (dockerResult) return dockerResult;
   }
   if (command === "kubectl" && config.trustedKubectlContexts?.length) {
-    const kubectlResult = evaluateKubectlExec(cmd, config);
+    const kubectlResult = evaluateKubectlExec(cmd, config, depth);
     if (kubectlResult) return kubectlResult;
   }
   if (command === "sprite" && config.trustedSprites?.length) {
-    const spriteResult = evaluateSpriteExec(cmd, config);
+    const spriteResult = evaluateSpriteExec(cmd, config, depth);
     if (spriteResult) return spriteResult;
   }
+  const mergedRule = collectMergedRule(cmd, config);
+  if (mergedRule) {
+    return evaluateRule(cmd, mergedRule);
+  }
+  return { command, args: args2, decision: config.defaultDecision, reason: `No rule for "${command}"`, matchedRule: "default" };
+}
+function collectMergedRule(cmd, config) {
+  const matchingRules = [];
   for (const layer of config.layers) {
     const rule = layer.rules.find((r) => commandMatchesName(cmd, r.command));
     if (rule) {
-      return evaluateRule(cmd, rule);
+      matchingRules.push(rule);
+      if (rule.override) break;
     }
   }
-  return { command, args: args2, decision: config.defaultDecision, reason: `No rule for "${command}"`, matchedRule: "default" };
+  if (matchingRules.length === 0) return null;
+  if (matchingRules.length === 1) return matchingRules[0];
+  const mergedPatterns = [];
+  for (const rule of matchingRules) {
+    if (rule.argPatterns) {
+      mergedPatterns.push(...rule.argPatterns);
+    }
+  }
+  return {
+    command: matchingRules[0].command,
+    default: matchingRules[0].default,
+    argPatterns: mergedPatterns
+  };
 }
 function evaluateRule(cmd, rule) {
   const { command, args: args2 } = cmd;
@@ -18482,10 +18516,10 @@ function evaluateRule(cmd, rule) {
       matched = matched && m.noArgs === (args2.length === 0);
     }
     if (m.argsMatch && matched) {
-      matched = m.argsMatch.some((re) => new RegExp(re).test(argsJoined));
+      matched = m.argsMatch.some((re) => safeRegexTest(re, argsJoined));
     }
     if (m.anyArgMatches && matched) {
-      matched = args2.some((arg) => m.anyArgMatches.some((re) => new RegExp(re).test(arg)));
+      matched = args2.some((arg) => m.anyArgMatches.some((re) => safeRegexTest(re, arg)));
     }
     if (m.argCount && matched) {
       if (m.argCount.min !== void 0) matched = matched && args2.length >= m.argCount.min;
@@ -18604,7 +18638,7 @@ function parseSSHArgs(args2) {
   }
   return {
     host,
-    remoteCommand: remoteArgs.length > 0 ? remoteArgs.join(" ") : null
+    remoteCommand: remoteArgs.length > 0 ? remoteArgs.map(shellQuote).join(" ") : null
   };
 }
 function extractHostFromRemotePath(args2) {
@@ -18614,7 +18648,7 @@ function extractHostFromRemotePath(args2) {
   }
   return null;
 }
-function evaluateSSHCommand(cmd, config) {
+function evaluateSSHCommand(cmd, config, depth = 0) {
   const { command, args: args2 } = cmd;
   const trustedHosts = config.trustedSSHHosts || [];
   if (command === "scp" || command === "rsync") {
@@ -18622,6 +18656,24 @@ function evaluateSSHCommand(cmd, config) {
     if (!host2) return null;
     const target2 = findMatchingTarget(host2, trustedHosts);
     if (!target2) return null;
+    if (target2.allowAll || !target2.overrides) {
+      return {
+        command,
+        args: args2,
+        decision: "allow",
+        reason: `Trusted SSH host "${host2}"${target2.allowAll ? " (allowAll)" : ""}`,
+        matchedRule: "trustedSSHHosts"
+      };
+    }
+    if (target2.overrides.alwaysDeny.some((name) => name === command)) {
+      return {
+        command,
+        args: args2,
+        decision: "deny",
+        reason: `Trusted SSH host "${host2}": "${command}" blocked by overrides`,
+        matchedRule: "trustedSSHHosts"
+      };
+    }
     return {
       command,
       args: args2,
@@ -18653,7 +18705,7 @@ function evaluateSSHCommand(cmd, config) {
     };
   }
   const parsed = parseCommand(remoteCommand);
-  const result = evaluate(parsed, configWithContextOverrides(config, target));
+  const result = evaluate(parsed, configWithContextOverrides(config, target), depth + 1);
   return {
     command,
     args: args2,
@@ -18673,6 +18725,12 @@ var DOCKER_EXEC_FLAGS_WITH_VALUE = /* @__PURE__ */ new Set([
   "--detach-keys"
 ]);
 var INTERACTIVE_SHELLS = /* @__PURE__ */ new Set(["bash", "sh", "zsh"]);
+function shellQuote(arg) {
+  if (/[\s"'\\$`!#&|;()<>]/.test(arg)) {
+    return `'${arg.replace(/'/g, "'\\''")}'`;
+  }
+  return arg;
+}
 function configWithContextOverrides(config, target) {
   const overrideLayers = [];
   if (target?.overrides) overrideLayers.push(target.overrides);
@@ -18683,7 +18741,7 @@ function configWithContextOverrides(config, target) {
     layers: [...overrideLayers, ...config.layers]
   };
 }
-function evaluateRemoteCommand(remoteArgs, config, target) {
+function evaluateRemoteCommand(remoteArgs, config, target, depth = 0) {
   if (target?.allowAll) {
     return { decision: "allow", reason: "allowAll target", details: [] };
   }
@@ -18698,7 +18756,7 @@ function evaluateRemoteCommand(remoteArgs, config, target) {
   if (INTERACTIVE_SHELLS.has(remoteCmd) && remoteArgs[1] === "-c" && remoteArgs.length >= 3) {
     const innerCommand = remoteArgs.slice(2).join(" ");
     const parsed2 = parseCommand(innerCommand);
-    return evaluate(parsed2, overriddenConfig);
+    return evaluate(parsed2, overriddenConfig, depth + 1);
   }
   const parsed = {
     commands: [{ command: remoteCmd, originalCommand: remoteCmd, args: remoteArgs.slice(1), envPrefixes: [], raw: remoteArgs.join(" ") }],
@@ -18706,7 +18764,7 @@ function evaluateRemoteCommand(remoteArgs, config, target) {
     subshellCommands: [],
     parseError: false
   };
-  return evaluate(parsed, overriddenConfig);
+  return evaluate(parsed, overriddenConfig, depth + 1);
 }
 function parseDockerExecArgs(args2) {
   let target = null;
@@ -18735,14 +18793,14 @@ function parseDockerExecArgs(args2) {
   }
   return { target, remoteArgs };
 }
-function evaluateDockerExec(cmd, config) {
+function evaluateDockerExec(cmd, config, depth = 0) {
   const { command, args: args2 } = cmd;
   if (args2[0] !== "exec") return null;
   const { target: containerName, remoteArgs } = parseDockerExecArgs(args2.slice(1));
   if (!containerName) return null;
   const matched = findMatchingTarget(containerName, config.trustedDockerContainers || []);
   if (!matched) return null;
-  const result = evaluateRemoteCommand(remoteArgs, config, matched);
+  const result = evaluateRemoteCommand(remoteArgs, config, matched, depth);
   return {
     command,
     args: args2,
@@ -18815,14 +18873,14 @@ function parseKubectlExecArgs(args2) {
   }
   return { context, pod, remoteArgs };
 }
-function evaluateKubectlExec(cmd, config) {
+function evaluateKubectlExec(cmd, config, depth = 0) {
   const { command, args: args2 } = cmd;
   if (args2[0] !== "exec") return null;
   const { context, pod, remoteArgs } = parseKubectlExecArgs(args2.slice(1));
   if (!context) return null;
   const matched = findMatchingTarget(context, config.trustedKubectlContexts || []);
   if (!matched) return null;
-  const result = evaluateRemoteCommand(remoteArgs, config, matched);
+  const result = evaluateRemoteCommand(remoteArgs, config, matched, depth);
   return {
     command,
     args: args2,
@@ -18882,13 +18940,13 @@ function parseSpriteExecArgs(args2) {
   }
   return { spriteName, remoteArgs };
 }
-function evaluateSpriteExec(cmd, config) {
+function evaluateSpriteExec(cmd, config, depth = 0) {
   const { command, args: args2 } = cmd;
   const { spriteName, remoteArgs } = parseSpriteExecArgs(args2);
   if (!spriteName) return null;
   const matched = findMatchingTarget(spriteName, config.trustedSprites || []);
   if (!matched) return null;
-  const result = evaluateRemoteCommand(remoteArgs, config, matched);
+  const result = evaluateRemoteCommand(remoteArgs, config, matched, depth);
   return {
     command,
     args: args2,
@@ -19604,6 +19662,10 @@ var DEFAULT_CONFIG = {
 };
 
 // src/rules.ts
+var VALID_DECISIONS = /* @__PURE__ */ new Set(["allow", "deny", "ask"]);
+function isValidDecision(value) {
+  return VALID_DECISIONS.has(value);
+}
 var USER_CONFIG_PATHS = [
   (0, import_path2.join)((0, import_os2.homedir)(), ".claude", "warden.yaml"),
   (0, import_path2.join)((0, import_os2.homedir)(), ".claude", "warden.json")
@@ -19654,15 +19716,36 @@ function tryLoadFile(filePath) {
     if (parsed && typeof parsed === "object") {
       return parsed;
     }
-  } catch {
+  } catch (err) {
+    process.stderr.write(`[warden] Warning: failed to parse config ${filePath}: ${err instanceof Error ? err.message : String(err)}
+`);
   }
   return null;
 }
 function extractLayer(raw) {
+  const rules = Array.isArray(raw.rules) ? raw.rules : [];
+  for (const rule of rules) {
+    if (rule && typeof rule === "object") {
+      if (rule.default && !isValidDecision(rule.default)) {
+        process.stderr.write(`[warden] Warning: invalid rule default "${rule.default}" for "${rule.command}", using "ask"
+`);
+        rule.default = "ask";
+      }
+      if (Array.isArray(rule.argPatterns)) {
+        for (const pattern of rule.argPatterns) {
+          if (pattern?.decision && !isValidDecision(pattern.decision)) {
+            process.stderr.write(`[warden] Warning: invalid pattern decision "${pattern.decision}" for "${rule.command}", using "ask"
+`);
+            pattern.decision = "ask";
+          }
+        }
+      }
+    }
+  }
   return {
     alwaysAllow: Array.isArray(raw.alwaysAllow) ? raw.alwaysAllow : [],
     alwaysDeny: Array.isArray(raw.alwaysDeny) ? raw.alwaysDeny : [],
-    rules: Array.isArray(raw.rules) ? raw.rules : []
+    rules
   };
 }
 function parseTrustedList(raw) {
@@ -19694,7 +19777,12 @@ function mergeNonLayerFields(config, raw) {
     config.trustedSprites = [...config.trustedSprites || [], ...parseTrustedList(raw.trustedSprites)];
   }
   if (typeof raw.defaultDecision === "string") {
-    config.defaultDecision = raw.defaultDecision;
+    if (isValidDecision(raw.defaultDecision)) {
+      config.defaultDecision = raw.defaultDecision;
+    } else {
+      process.stderr.write(`[warden] Warning: invalid defaultDecision "${raw.defaultDecision}", ignoring
+`);
+    }
   }
   if (typeof raw.askOnSubshell === "boolean") {
     config.askOnSubshell = raw.askOnSubshell;
@@ -19850,10 +19938,22 @@ function sendNotification(title, message, config) {
 }
 
 // src/index.ts
+var MAX_STDIN_SIZE = 1024 * 1024;
 async function main() {
   let raw = "";
   for await (const chunk of process.stdin) {
     raw += chunk;
+    if (raw.length > MAX_STDIN_SIZE) {
+      const output2 = {
+        hookSpecificOutput: {
+          hookEventName: "PreToolUse",
+          permissionDecision: "ask",
+          permissionDecisionReason: "[warden] Input exceeds size limit"
+        }
+      };
+      process.stdout.write(JSON.stringify(output2));
+      process.exit(0);
+    }
   }
   let input;
   try {

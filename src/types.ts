@@ -39,6 +39,8 @@ export interface CommandRule {
   command: string;
   default: Decision;
   argPatterns?: ArgPattern[];
+  /** When true, this rule completely replaces lower-layer rules instead of merging with them. */
+  override?: boolean;
 }
 
 export interface ConfigLayer {

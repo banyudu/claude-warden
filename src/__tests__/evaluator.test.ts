@@ -242,11 +242,11 @@ describe('evaluator', () => {
       expect(evaluate(parseCommand('curl https://example.com'), config).decision).toBe('deny');
     });
 
-    it('workspace rule overrides default rule for same command', () => {
+    it('workspace rule with override replaces default rule for same command', () => {
       const workspaceLayer: ConfigLayer = {
         alwaysAllow: [],
         alwaysDeny: [],
-        rules: [{ command: 'npm', default: 'deny' }],
+        rules: [{ command: 'npm', default: 'deny', override: true }],
       };
       const config: WardenConfig = {
         ...structuredClone(DEFAULT_CONFIG),
@@ -255,11 +255,11 @@ describe('evaluator', () => {
       expect(evaluate(parseCommand('npm install'), config).decision).toBe('deny');
     });
 
-    it('user rule overrides default rule', () => {
+    it('user rule with override replaces default rule', () => {
       const userLayer: ConfigLayer = {
         alwaysAllow: [],
         alwaysDeny: [],
-        rules: [{ command: 'docker', default: 'allow' }],
+        rules: [{ command: 'docker', default: 'allow', override: true }],
       };
       const config: WardenConfig = {
         ...structuredClone(DEFAULT_CONFIG),
@@ -268,7 +268,7 @@ describe('evaluator', () => {
       expect(evaluate(parseCommand('docker run ubuntu'), config).decision).toBe('allow');
     });
 
-    it('first layer with matching rule wins (workspace over user)', () => {
+    it('first layer default wins when merging (workspace over user)', () => {
       const userLayer: ConfigLayer = {
         alwaysAllow: [],
         alwaysDeny: [],
@@ -283,7 +283,9 @@ describe('evaluator', () => {
         ...structuredClone(DEFAULT_CONFIG),
         layers: [workspaceLayer, userLayer, DEFAULT_CONFIG.layers[0]],
       };
-      expect(evaluate(parseCommand('npm install'), config).decision).toBe('ask');
+      // npm install matches a default argPattern → allow; but unmatched commands use workspace's default: ask
+      expect(evaluate(parseCommand('npm install'), config).decision).toBe('allow');
+      expect(evaluate(parseCommand('npm some-unknown-cmd'), config).decision).toBe('ask');
     });
   });
 
