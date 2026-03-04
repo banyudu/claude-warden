@@ -5,6 +5,11 @@ import { join } from 'path';
 import type { WardenConfig, ConfigLayer, TrustedTarget } from './types';
 import { DEFAULT_CONFIG } from './defaults';
 
+const VALID_DECISIONS = new Set(['allow', 'deny', 'ask']);
+function isValidDecision(value: string): value is 'allow' | 'deny' | 'ask' {
+  return VALID_DECISIONS.has(value);
+}
+
 const USER_CONFIG_PATHS = [
   join(homedir(), '.claude', 'warden.yaml'),
   join(homedir(), '.claude', 'warden.json'),
@@ -76,10 +81,27 @@ function tryLoadFile(filePath: string): Record<string, unknown> | null {
 }
 
 function extractLayer(raw: Record<string, unknown>): ConfigLayer {
+  const rules = Array.isArray(raw.rules) ? raw.rules : [];
+  for (const rule of rules) {
+    if (rule && typeof rule === 'object') {
+      if (rule.default && !isValidDecision(rule.default)) {
+        process.stderr.write(`[warden] Warning: invalid rule default "${rule.default}" for "${rule.command}", using "ask"\n`);
+        rule.default = 'ask';
+      }
+      if (Array.isArray(rule.argPatterns)) {
+        for (const pattern of rule.argPatterns) {
+          if (pattern?.decision && !isValidDecision(pattern.decision)) {
+            process.stderr.write(`[warden] Warning: invalid pattern decision "${pattern.decision}" for "${rule.command}", using "ask"\n`);
+            pattern.decision = 'ask';
+          }
+        }
+      }
+    }
+  }
   return {
     alwaysAllow: Array.isArray(raw.alwaysAllow) ? raw.alwaysAllow : [],
     alwaysDeny: Array.isArray(raw.alwaysDeny) ? raw.alwaysDeny : [],
-    rules: Array.isArray(raw.rules) ? raw.rules : [],
+    rules,
   };
 }
 
@@ -113,7 +135,11 @@ function mergeNonLayerFields(config: WardenConfig, raw: Record<string, unknown>)
     config.trustedSprites = [...(config.trustedSprites || []), ...parseTrustedList(raw.trustedSprites)];
   }
   if (typeof raw.defaultDecision === 'string') {
-    config.defaultDecision = raw.defaultDecision as WardenConfig['defaultDecision'];
+    if (isValidDecision(raw.defaultDecision)) {
+      config.defaultDecision = raw.defaultDecision;
+    } else {
+      process.stderr.write(`[warden] Warning: invalid defaultDecision "${raw.defaultDecision}", ignoring\n`);
+    }
   }
   if (typeof raw.askOnSubshell === 'boolean') {
     config.askOnSubshell = raw.askOnSubshell;
