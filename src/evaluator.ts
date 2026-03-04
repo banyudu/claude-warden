@@ -5,6 +5,16 @@ import type {
 } from './types';
 import { parseCommand } from './parser';
 
+/** Safely test a regex pattern, returning false on invalid patterns. */
+function safeRegexTest(pattern: string, input: string): boolean {
+  try {
+    return new RegExp(pattern).test(input);
+  } catch {
+    process.stderr.write(`[warden] Warning: invalid regex pattern: ${pattern}\n`);
+    return false;
+  }
+}
+
 /**
  * Match a config entry name against a parsed command.
  * If the name contains '/' (full path), match against originalCommand (with ~ expansion).
@@ -131,11 +141,11 @@ function evaluateRule(cmd: ParsedCommand, rule: CommandRule): CommandEvalDetail 
     }
 
     if (m.argsMatch && matched) {
-      matched = m.argsMatch.some(re => new RegExp(re).test(argsJoined));
+      matched = m.argsMatch.some(re => safeRegexTest(re, argsJoined));
     }
 
     if (m.anyArgMatches && matched) {
-      matched = args.some(arg => m.anyArgMatches!.some(re => new RegExp(re).test(arg)));
+      matched = args.some(arg => m.anyArgMatches!.some(re => safeRegexTest(re, arg)));
     }
 
     if (m.argCount && matched) {
