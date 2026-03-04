@@ -299,6 +299,22 @@ function evaluateSSHCommand(cmd: ParsedCommand, config: WardenConfig, depth: num
     if (!host) return null;
     const target = findMatchingTarget(host, trustedHosts);
     if (!target) return null;
+    if (target.allowAll || !target.overrides) {
+      return {
+        command, args,
+        decision: 'allow',
+        reason: `Trusted SSH host "${host}"${target.allowAll ? ' (allowAll)' : ''}`,
+        matchedRule: 'trustedSSHHosts',
+      };
+    }
+    if (target.overrides.alwaysDeny.some(name => name === command)) {
+      return {
+        command, args,
+        decision: 'deny',
+        reason: `Trusted SSH host "${host}": "${command}" blocked by overrides`,
+        matchedRule: 'trustedSSHHosts',
+      };
+    }
     return {
       command, args,
       decision: 'allow',
