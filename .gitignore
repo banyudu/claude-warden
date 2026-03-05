@@ -84,6 +84,7 @@ out
 # Nuxt.js build / generate output
 .nuxt
 # dist - keep dist/index.cjs for plugin hook
+dist/codex-export.cjs
 
 # Gatsby files
 .cache/
