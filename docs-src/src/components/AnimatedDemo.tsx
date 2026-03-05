@@ -50,10 +50,10 @@ const examples: Example[] = [
     finalRule: 'any ask → ASK',
   },
   {
-    raw: 'pnpm test && pnpm build; echo done',
+    raw: 'pnpm test && pnpx vitest; echo done',
     parts: [
-      { cmd: 'pnpm test', decision: 'allow', rule: 'pnpm *' },
-      { cmd: 'pnpm build', decision: 'allow', rule: 'pnpm *' },
+      { cmd: 'pnpm test', decision: 'allow', rule: 'pnpm safe cmd' },
+      { cmd: 'pnpx vitest', decision: 'allow', rule: 'pnpx dev tool' },
       { cmd: 'echo done', decision: 'allow', rule: 'built-in safe' },
     ],
     operators: ['&&', ';'],
