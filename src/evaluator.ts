@@ -121,6 +121,9 @@ function evaluateCommand(cmd: ParsedCommand, config: WardenConfig, depth: number
     const spriteResult = evaluateSpriteExec(cmd, config, depth);
     if (spriteResult) return spriteResult;
   }
+  if (command === 'xargs') {
+    return evaluateXargsCommand(cmd, config, depth);
+  }
 
   // 3. Scoped command rules — collect and merge across layers
   const mergedRule = collectMergedRule(cmd, config);
@@ -209,6 +212,140 @@ function evaluateRule(cmd: ParsedCommand, rule: CommandRule): CommandEvalDetail 
     decision: rule.default,
     reason: `Default for "${command}"`,
     matchedRule: `${command}:default`,
+  };
+}
+
+/** xargs short flags that consume a value. */
+const XARGS_SHORT_FLAGS_WITH_VALUE = new Set(['E', 'I', 'L', 'n', 'P', 's', 'S', 'd', 'a']);
+/** xargs short flags that do not consume a value. */
+const XARGS_SHORT_FLAGS_NO_VALUE = new Set(['0', 'e', 'o', 'p', 'r', 't', 'x']);
+/** xargs long flags that consume a value. */
+const XARGS_LONG_FLAGS_WITH_VALUE = new Set([
+  '--eof', '--replace', '--max-lines', '--max-args', '--max-procs', '--max-chars',
+  '--arg-file', '--delimiter',
+]);
+/** xargs long flags that do not consume a value. */
+const XARGS_LONG_FLAGS_NO_VALUE = new Set([
+  '--null', '--exit', '--open-tty', '--interactive', '--no-run-if-empty',
+  '--verbose', '--show-limits',
+]);
+
+function parseXargsSubcommand(args: string[]): { subcommand: ParsedCommand | null; unresolved: boolean } {
+  let i = 0;
+
+  while (i < args.length) {
+    const arg = args[i];
+
+    if (arg === '--') {
+      i++;
+      break;
+    }
+
+    if (!arg.startsWith('-') || arg === '-') {
+      break;
+    }
+
+    if (arg.startsWith('--')) {
+      const eqIndex = arg.indexOf('=');
+      const longFlag = eqIndex === -1 ? arg : arg.slice(0, eqIndex);
+
+      if (XARGS_LONG_FLAGS_WITH_VALUE.has(longFlag)) {
+        if (eqIndex !== -1) {
+          i++;
+          continue;
+        }
+        if (i + 1 >= args.length) return { subcommand: null, unresolved: true };
+        i += 2;
+        continue;
+      }
+
+      if (XARGS_LONG_FLAGS_NO_VALUE.has(longFlag)) {
+        i++;
+        continue;
+      }
+
+      return { subcommand: null, unresolved: true };
+    }
+
+    const short = arg[1];
+    if (XARGS_SHORT_FLAGS_WITH_VALUE.has(short)) {
+      // Inline value form, e.g. -n1 / -I{}
+      if (arg.length > 2) {
+        i++;
+        continue;
+      }
+      if (i + 1 >= args.length) return { subcommand: null, unresolved: true };
+      i += 2;
+      continue;
+    }
+
+    // Grouped short flags, e.g. -0rt
+    const grouped = arg.slice(1).split('');
+    const allKnownNoValue = grouped.every(ch => XARGS_SHORT_FLAGS_NO_VALUE.has(ch));
+    if (allKnownNoValue) {
+      i++;
+      continue;
+    }
+
+    return { subcommand: null, unresolved: true };
+  }
+
+  // No explicit command means xargs defaults to `echo`.
+  if (i >= args.length) {
+    return {
+      unresolved: false,
+      subcommand: {
+        command: 'echo',
+        originalCommand: 'echo',
+        args: [],
+        envPrefixes: [],
+        raw: 'echo',
+      },
+    };
+  }
+
+  const subcommand = args[i];
+  const subArgs = args.slice(i + 1);
+  return {
+    unresolved: false,
+    subcommand: {
+      command: subcommand,
+      originalCommand: subcommand,
+      args: subArgs,
+      envPrefixes: [],
+      raw: [subcommand, ...subArgs].join(' '),
+    },
+  };
+}
+
+function evaluateXargsCommand(cmd: ParsedCommand, config: WardenConfig, depth: number = 0): CommandEvalDetail {
+  const { command, args } = cmd;
+  const { subcommand, unresolved } = parseXargsSubcommand(args);
+
+  if (unresolved || !subcommand) {
+    return {
+      command,
+      args,
+      decision: 'ask',
+      reason: 'xargs subcommand could not be resolved safely',
+      matchedRule: 'xargs:subcommand',
+    };
+  }
+
+  const parsed: ParseResult = {
+    commands: [subcommand],
+    hasSubshell: false,
+    subshellCommands: [],
+    parseError: false,
+  };
+  const result = evaluate(parsed, config, depth + 1);
+
+  return {
+    command,
+    args,
+    decision: result.decision,
+    reason: `xargs subcommand "${subcommand.command}": ${result.reason}`,
+    matchedRule: 'xargs:subcommand',
   };
 }
 
