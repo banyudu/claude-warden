@@ -68,6 +68,27 @@ cd claude-warden && npm install && npm run build
 claude --plugin-dir ./claude-warden
 ```
 
+## Codex CLI (experimental)
+
+Codex currently uses `execpolicy` (`.rules` files) for command approvals. Warden can export your effective command-level decisions to a Codex rules file:
+
+```bash
+pnpm run build
+pnpm run codex:export-rules
+```
+
+This writes `.codex/rules/warden.rules` in the current project by default.
+
+- Use `--cwd <dir>` to choose which workspace config to load.
+- Use `--out <path>` to choose an output path.
+- Use `--stdout` to print the generated rules.
+
+Example:
+
+```bash
+node dist/codex-export.cjs --cwd . --out .codex/rules/warden.rules
+```
+
 ## Configure
 
 Warden works out of the box with sensible defaults. To customize, create a config file:
