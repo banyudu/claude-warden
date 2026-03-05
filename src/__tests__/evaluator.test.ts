@@ -772,8 +772,11 @@ describe('evaluator', () => {
     it('asks for awk with system()', () => expect(eval_('awk \'BEGIN{system("rm -rf /")}\' file').decision).toBe('ask'));
 
     // xargs
-    it('asks for xargs with command', () => expect(eval_('xargs rm').decision).toBe('ask'));
-    it('allows xargs with no args', () => expect(eval_('xargs').decision).toBe('allow'));
+    it('uses subcommand policy for xargs', () => expect(eval_('xargs rm').decision).toBe('allow'));
+    it('denies xargs with denied subcommand', () => expect(eval_('xargs sudo').decision).toBe('deny'));
+    it('allows xargs with no args (defaults to echo)', () => expect(eval_('xargs').decision).toBe('allow'));
+    it('allows xargs with options and no command (defaults to echo)', () => expect(eval_('xargs -0').decision).toBe('allow'));
+    it('asks when xargs subcommand cannot be resolved', () => expect(eval_('xargs --unknown').decision).toBe('ask'));
 
     // tee
     it('allows tee to normal path', () => expect(eval_('tee output.txt').decision).toBe('allow'));
