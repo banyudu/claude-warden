@@ -22,7 +22,7 @@ const levels = [
   },
   {
     name: 'Conditional Rules',
-    desc: 'Command + argument pattern matching for nuanced decisions',
+    desc: 'Command + argument pattern matching for nuanced decisions. User rules extend defaults by default.',
     examples: ['git status → allow', 'git push → ask', 'npm run * → allow'],
     color: 'var(--color-ask)',
   },
@@ -47,7 +47,7 @@ export function RuleHierarchy() {
       >
         <h2 className="section-title">Rule Hierarchy</h2>
         <p className="section-subtitle">
-          Rules are evaluated top-to-bottom. First match wins.
+          Rules are evaluated top-to-bottom across config layers (project &gt; user &gt; defaults). First match wins.
         </p>
       </motion.div>
 

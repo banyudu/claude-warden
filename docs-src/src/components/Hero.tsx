@@ -5,7 +5,7 @@ const examples = [
   { cmd: 'cat file.txt | grep pattern | wc -l', decision: 'allow' as const },
   { cmd: 'npm run build && rm -rf /', decision: 'deny' as const },
   { cmd: 'git status && git push origin main', decision: 'ask' as const },
-  { cmd: 'pnpm test && pnpm build', decision: 'allow' as const },
+  { cmd: 'pnpm test && pnpx vitest', decision: 'allow' as const },
   { cmd: 'NODE_ENV=prod npm start && sudo reboot', decision: 'deny' as const },
 ]
 
