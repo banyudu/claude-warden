@@ -445,4 +445,24 @@ describe('integration: realistic commands', () => {
       expect(wardenWith('sprite exec -s dev-web cat /etc/hosts', { trustedSprites: toTargets(sprites) }).decision).toBe('allow');
     });
   });
+
+  // TODO(#30): Commands with $ in args that fail bash-parser should still resolve via fallback
+  describe('fallback parser integration (#30)', () => {
+    it('gh api with $ in body → allow (gh is default allow)', () => {
+      expect(warden('gh api repos/org/repo/pulls/1/comments -f body="regex /^[A-Za-z_][A-Za-z0-9_]*$/" -F in_reply_to=123').decision).toBe('allow');
+    });
+
+    it('node with $ in arg → ask (node is default ask, uses fallback)', () => {
+      const result = warden('node script.js --pattern="/^foo$/"');
+      expect(result.decision).toBe('ask');
+    });
+
+    it('cat with $ in arg → allow (cat is alwaysAllow)', () => {
+      expect(warden('cat "file_with_$dollar.txt"').decision).toBe('allow');
+    });
+
+    it('sudo with $ in arg → deny (sudo is alwaysDeny)', () => {
+      expect(warden('sudo echo "$test"').decision).toBe('deny');
+    });
+  });
 });

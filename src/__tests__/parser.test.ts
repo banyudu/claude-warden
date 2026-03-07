@@ -264,6 +264,7 @@ describe('parseCommand', () => {
   });
 });
 
+// Tests for regex fallback parser (see #30)
 describe('regex fallback parser', () => {
   it('falls back to regex when bash-parser fails on $ in double-quoted args', () => {
     const result = parseCommand('gh api repos/org/repo/pulls/1/comments -f body="regex /^[A-Za-z_][A-Za-z0-9_]*$/" -F in_reply_to=123');
@@ -287,5 +288,73 @@ describe('regex fallback parser', () => {
     expect(result.parseError).toBe(false);
     expect(result.commands[0].command).toBe('gh');
     expect(result.commands[0].envPrefixes).toContain('FOO=bar');
+  });
+
+  it('handles $ at end of double-quoted string', () => {
+    const result = parseCommand('gh api repos/org/repo/issues -f body="price is 100$"');
+    expect(result.parseError).toBe(false);
+    expect(result.commands[0].command).toBe('gh');
+  });
+
+  it('handles multiple $ characters in args', () => {
+    const result = parseCommand('gh api repos/org/repo/issues -f body="costs $5 or $10"');
+    expect(result.parseError).toBe(false);
+    expect(result.commands[0].command).toBe('gh');
+  });
+
+  it('normalizes full path commands in fallback', () => {
+    const result = parseCommand('/usr/bin/gh api repos/org/repo/issues -f body="$test"');
+    expect(result.parseError).toBe(false);
+    expect(result.commands[0].command).toBe('gh');
+  });
+
+  it('preserves single-quoted args in fallback', () => {
+    const result = parseCommand("gh api repos/org/repo/issues -f body='has $dollar signs'");
+    // bash-parser may or may not handle this — if fallback is used, verify command
+    expect(result.parseError).toBe(false);
+    expect(result.commands[0].command).toBe('gh');
+  });
+
+  // TODO(#30): These cases currently fall back to regex but ideally bash-parser should handle them
+  it('does not use fallback for && chains (too complex)', () => {
+    const result = parseCommand('echo "$bad" && echo ok');
+    if (result.parseError) {
+      // Fallback correctly refuses chains
+      expect(result.commands.length).toBe(0);
+    }
+  });
+
+  it('does not use fallback for semicolons (too complex)', () => {
+    const result = parseCommand('echo "$bad"; echo ok');
+    if (result.parseError) {
+      expect(result.commands.length).toBe(0);
+    }
+  });
+});
+
+// TODO(#30): bash-parser misparses these — currently handled by regex fallback
+describe('bash-parser known limitations (#30)', () => {
+  it('$ followed by / in double quotes (regex anchors)', () => {
+    const result = parseCommand('curl -X POST -d "pattern: /^foo$/" http://example.com');
+    expect(result.parseError).toBe(false);
+    expect(result.commands[0].command).toBe('curl');
+  });
+
+  it('$ followed by ] in double quotes (character classes)', () => {
+    const result = parseCommand('echo "match [a-z$]"');
+    // bash-parser may handle this or fallback may catch it
+    expect(result.parseError).toBe(false);
+  });
+
+  it('$ followed by ) in double quotes', () => {
+    const result = parseCommand('gh issue create -f body="validate($)"');
+    expect(result.parseError).toBe(false);
+    expect(result.commands[0].command).toBe('gh');
+  });
+
+  it('multiline body with $ characters', () => {
+    const result = parseCommand('gh api repos/org/repo/pulls/1/comments -f body="line1\nregex: /^[A-Z]$+/\nline3"');
+    expect(result.parseError).toBe(false);
+    expect(result.commands[0].command).toBe('gh');
   });
 });

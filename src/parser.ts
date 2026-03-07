@@ -386,6 +386,7 @@ export function parseCommand(input: string): ParseResult {
     // so the evaluator can still apply rules (e.g. gh is default allow).
     // This handles cases where bash-parser chokes on special characters in arguments
     // (like $ in double-quoted strings that aren't actual expansions).
+    // TODO(#30): Improve fallback — consider pre-processing $ patterns or using a more robust parser.
     const fallback = regexFallbackParse(input);
     if (fallback) {
       return { commands: [fallback], hasSubshell: false, subshellCommands: [], parseError: false };
@@ -398,6 +399,11 @@ export function parseCommand(input: string): ParseResult {
  * Regex-based fallback parser for when bash-parser fails.
  * Extracts the command name and arguments from simple single commands.
  * Only handles straightforward cases — returns null for pipes, chains, etc.
+ *
+ * TODO(#30): This is a basic fallback with known limitations:
+ * - Does not handle pipes, chains (&&, ||), or semicolons
+ * - Naive argument tokenization — doesn't handle all shell quoting edge cases
+ * - Does not detect subshells or command substitutions
  */
 function regexFallbackParse(input: string): ParsedCommand | null {
   const trimmed = input.trim();
