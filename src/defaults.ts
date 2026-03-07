@@ -147,6 +147,7 @@ export const DEFAULT_CONFIG: WardenConfig = {
       // macOS utilities (read-only)
       'mdfind', 'mdls', 'mdutil', 'plutil', 'sips',
       'xcode-select', 'xcrun', 'xcodebuild',
+      'networkQuality',
       // Misc safe
       'cd', 'pushd', 'popd', 'dirs', 'hash', 'alias', 'set',
       'sleep', 'wait', 'time',
@@ -497,6 +498,12 @@ export const DEFAULT_CONFIG: WardenConfig = {
       ]},
       { command: 'codesign', default: 'ask', argPatterns: [
         { match: { anyArgMatches: ['^(-vv|--verify|--display|-d)$'] }, decision: 'allow', description: 'Verify codesign' },
+      ]},
+      { command: 'networksetup', default: 'ask', argPatterns: [
+        { match: { anyArgMatches: ['^-(get|list|show)'] }, decision: 'allow', description: 'Read-only network configuration queries' },
+      ]},
+      { command: 'scutil', default: 'ask', argPatterns: [
+        { match: { anyArgMatches: ['^--get$', '^--dns$', '^--proxy$', '^--nwi$'] }, decision: 'allow', description: 'Read-only system configuration queries' },
       ]},
       { command: 'osascript', default: 'ask' },
       { command: 'say', default: 'ask' },

@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.8.0] - 2026-03-07
+
+### Features
+- Handle xargs safeguards using resolved subcommand (e2cbfa9)
+- Allow users to extend default rules instead of shadowing them (b08977c)
+- Add pnpx as a package runner rule (b7ac6a6)
+- Add networksetup, scutil, and networkQuality to default rules for macOS network diagnostics
+- Update dependencies and version constraints (d93ce5b)
+
+### Bug Fixes
+- SSH remoteArgs.join loses quoting for paths with spaces (e0354d6)
+- rsync/scp should respect trusted host overrides and allowAll (225a4e2)
+- Add stdin size limit in index.ts (92ab2b4)
+- Add recursion depth limit for nested subshell evaluation (1597b3c)
+- Move bash-parser and yaml to dependencies (099e1dd)
+
+### Other Changes
+- Warn when config files fail to parse (76db659)
+- Validate defaultDecision and rule decision values from config (3898c04)
+- Wrap regex compilation in try/catch to prevent ReDoS (22fc97a)
+- Add missing test coverage for security hardening (c558512)
+- Update GitHub Pages to reflect recent feature changes (00d8550)
+- Add .worktrees to .gitignore (f158e83)
+
 ## [1.7.0] - 2026-03-04
 
 ### Features

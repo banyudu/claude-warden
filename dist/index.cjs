@@ -18477,6 +18477,9 @@ function evaluateCommand(cmd, config, depth = 0) {
     const spriteResult = evaluateSpriteExec(cmd, config, depth);
     if (spriteResult) return spriteResult;
   }
+  if (command === "xargs") {
+    return evaluateXargsCommand(cmd, config, depth);
+  }
   const mergedRule = collectMergedRule(cmd, config);
   if (mergedRule) {
     return evaluateRule(cmd, mergedRule);
@@ -18542,6 +18545,126 @@ function evaluateRule(cmd, rule) {
     decision: rule.default,
     reason: `Default for "${command}"`,
     matchedRule: `${command}:default`
+  };
+}
+var XARGS_SHORT_FLAGS_WITH_VALUE = /* @__PURE__ */ new Set(["E", "I", "L", "n", "P", "s", "S", "d", "a"]);
+var XARGS_SHORT_FLAGS_NO_VALUE = /* @__PURE__ */ new Set(["0", "e", "o", "p", "r", "t", "x"]);
+var XARGS_LONG_FLAGS_WITH_VALUE = /* @__PURE__ */ new Set([
+  "--eof",
+  "--replace",
+  "--max-lines",
+  "--max-args",
+  "--max-procs",
+  "--max-chars",
+  "--arg-file",
+  "--delimiter"
+]);
+var XARGS_LONG_FLAGS_NO_VALUE = /* @__PURE__ */ new Set([
+  "--null",
+  "--exit",
+  "--open-tty",
+  "--interactive",
+  "--no-run-if-empty",
+  "--verbose",
+  "--show-limits"
+]);
+function parseXargsSubcommand(args2) {
+  let i = 0;
+  while (i < args2.length) {
+    const arg = args2[i];
+    if (arg === "--") {
+      i++;
+      break;
+    }
+    if (!arg.startsWith("-") || arg === "-") {
+      break;
+    }
+    if (arg.startsWith("--")) {
+      const eqIndex = arg.indexOf("=");
+      const longFlag = eqIndex === -1 ? arg : arg.slice(0, eqIndex);
+      if (XARGS_LONG_FLAGS_WITH_VALUE.has(longFlag)) {
+        if (eqIndex !== -1) {
+          i++;
+          continue;
+        }
+        if (i + 1 >= args2.length) return { subcommand: null, unresolved: true };
+        i += 2;
+        continue;
+      }
+      if (XARGS_LONG_FLAGS_NO_VALUE.has(longFlag)) {
+        i++;
+        continue;
+      }
+      return { subcommand: null, unresolved: true };
+    }
+    const short = arg[1];
+    if (XARGS_SHORT_FLAGS_WITH_VALUE.has(short)) {
+      if (arg.length > 2) {
+        i++;
+        continue;
+      }
+      if (i + 1 >= args2.length) return { subcommand: null, unresolved: true };
+      i += 2;
+      continue;
+    }
+    const grouped = arg.slice(1).split("");
+    const allKnownNoValue = grouped.every((ch) => XARGS_SHORT_FLAGS_NO_VALUE.has(ch));
+    if (allKnownNoValue) {
+      i++;
+      continue;
+    }
+    return { subcommand: null, unresolved: true };
+  }
+  if (i >= args2.length) {
+    return {
+      unresolved: false,
+      subcommand: {
+        command: "echo",
+        originalCommand: "echo",
+        args: [],
+        envPrefixes: [],
+        raw: "echo"
+      }
+    };
+  }
+  const subcommand = args2[i];
+  const subArgs = args2.slice(i + 1);
+  return {
+    unresolved: false,
+    subcommand: {
+      command: subcommand,
+      originalCommand: subcommand,
+      args: subArgs,
+      envPrefixes: [],
+      raw: [subcommand, ...subArgs].join(" ")
+    }
+  };
+}
+function evaluateXargsCommand(cmd, config, depth = 0) {
+  const { command, args: args2 } = cmd;
+  const { subcommand, unresolved } = parseXargsSubcommand(args2);
+  if (unresolved || !subcommand) {
+    return {
+      command,
+      args: args2,
+      decision: "ask",
+      reason: "xargs subcommand could not be resolved safely",
+      matchedRule: "xargs:subcommand"
+    };
+  }
+  const parsed = {
+    commands: [subcommand],
+    hasSubshell: false,
+    subshellCommands: [],
+    parseError: false
+  };
+  const result = evaluate(parsed, config, depth + 1);
+  return {
+    command,
+    args: args2,
+    decision: result.decision,
+    reason: `xargs subcommand "${subcommand.command}": ${result.reason}`,
+    matchedRule: "xargs:subcommand"
   };
 }
 var SSH_FLAGS_WITH_VALUE = /* @__PURE__ */ new Set([
@@ -19289,6 +19412,7 @@ var DEFAULT_CONFIG = {
       "xcode-select",
       "xcrun",
       "xcodebuild",
+      "networkQuality",
       // Misc safe
       "cd",
       "pushd",
@@ -19650,6 +19774,12 @@ var DEFAULT_CONFIG = {
       ] },
       { command: "codesign", default: "ask", argPatterns: [
         { match: { anyArgMatches: ["^(-vv|--verify|--display|-d)$"] }, decision: "allow", description: "Verify codesign" }
+      ] },
+      { command: "networksetup", default: "ask", argPatterns: [
+        { match: { anyArgMatches: ["^-(get|list|show)"] }, decision: "allow", description: "Read-only network configuration queries" }
+      ] },
+      { command: "scutil", default: "ask", argPatterns: [
+        { match: { anyArgMatches: ["^--get$", "^--dns$", "^--proxy$", "^--nwi$"] }, decision: "allow", description: "Read-only system configuration queries" }
       ] },
       { command: "osascript", default: "ask" },
       { command: "say", default: "ask" },
