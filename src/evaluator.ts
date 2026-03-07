@@ -124,6 +124,9 @@ function evaluateCommand(cmd: ParsedCommand, config: WardenConfig, depth: number
   if (command === 'xargs') {
     return evaluateXargsCommand(cmd, config, depth);
   }
+  if (command === 'find') {
+    return evaluateFindCommand(cmd, config, depth);
+  }
 
   // 3. Scoped command rules — collect and merge across layers
   const mergedRule = collectMergedRule(cmd, config);
@@ -347,6 +350,77 @@ function evaluateXargsCommand(cmd: ParsedCommand, config: WardenConfig, depth: n
     reason: `xargs subcommand "${subcommand.command}": ${result.reason}`,
     matchedRule: 'xargs:subcommand',
   };
+}
+
+// ─── find -exec whitelisting ───
+
+function parseFindExecCommands(args: string[]): ParsedCommand[] {
+  const commands: ParsedCommand[] = [];
+  let i = 0;
+
+  while (i < args.length) {
+    if (args[i] === '-exec' || args[i] === '-execdir') {
+      i++;
+      const cmdArgs: string[] = [];
+      while (i < args.length && args[i] !== ';' && args[i] !== '+') {
+        if (args[i] !== '{}') {
+          cmdArgs.push(args[i]);
+        }
+        i++;
+      }
+      i++; // skip terminator
+      if (cmdArgs.length > 0) {
+        commands.push({
+          command: cmdArgs[0],
+          originalCommand: cmdArgs[0],
+          args: cmdArgs.slice(1),
+          envPrefixes: [],
+          raw: cmdArgs.join(' '),
+        });
+      }
+    } else {
+      i++;
+    }
+  }
+
+  return commands;
+}
+
+function evaluateFindCommand(cmd: ParsedCommand, config: WardenConfig, depth: number = 0): CommandEvalDetail {
+  const { command, args } = cmd;
+
+  // -delete, -ok, -okdir are inherently dangerous
+  if (args.some(a => a === '-delete')) {
+    return { command, args, decision: 'ask', reason: 'find -delete can remove files', matchedRule: 'find:delete' };
+  }
+  if (args.some(a => a === '-ok' || a === '-okdir')) {
+    return { command, args, decision: 'ask', reason: 'find -ok/-okdir can execute commands interactively', matchedRule: 'find:ok' };
+  }
+
+  // Extract and evaluate -exec/-execdir commands
+  const execCommands = parseFindExecCommands(args);
+
+  if (execCommands.length === 0) {
+    return { command, args, decision: 'allow', reason: 'find without dangerous flags', matchedRule: 'find:safe' };
+  }
+
+  for (const execCmd of execCommands) {
+    const parsed: ParseResult = {
+      commands: [execCmd],
+      hasSubshell: false,
+      subshellCommands: [],
+      parseError: false,
+    };
+    const result = evaluate(parsed, config, depth + 1);
+    if (result.decision === 'deny') {
+      return { command, args, decision: 'deny', reason: `find -exec: ${result.reason}`, matchedRule: 'find:exec' };
+    }
+    if (result.decision === 'ask') {
+      return { command, args, decision: 'ask', reason: `find -exec: ${result.reason}`, matchedRule: 'find:exec' };
+    }
+  }
+
+  return { command, args, decision: 'allow', reason: 'find -exec commands are safe', matchedRule: 'find:exec' };
 }
 
 /** SSH flags that consume the next argument (skip it when extracting host). */

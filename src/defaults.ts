@@ -324,13 +324,7 @@ export const DEFAULT_CONFIG: WardenConfig = {
       },
 
       // --- Potentially dangerous text/file tools ---
-      {
-        command: 'find',
-        default: 'allow',
-        argPatterns: [
-          { match: { anyArgMatches: ['^-exec$', '^-execdir$', '^-delete$', '^-ok$', '^-okdir$'] }, decision: 'ask', reason: 'find can execute or delete files' },
-        ],
-      },
+      // `find` is handled specially in the evaluator (recursive -exec evaluation)
       {
         command: 'sed',
         default: 'allow',
