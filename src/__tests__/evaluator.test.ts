@@ -758,10 +758,16 @@ describe('evaluator', () => {
   });
 
   describe('dangerous alwaysAllow hardening', () => {
-    // find
+    // find — smart -exec evaluation
     it('allows find basic search', () => expect(eval_('find . -name "*.ts"').decision).toBe('allow'));
-    it('asks for find -exec', () => expect(eval_('find . -exec rm {} \\;').decision).toBe('ask'));
+    it('allows find -exec with safe command', () => expect(eval_('find . -exec grep -l "foo" {} \\;').decision).toBe('allow'));
+    it('allows find -exec rm (few files)', () => expect(eval_('find . -exec rm {} \\;').decision).toBe('allow'));
+    it('asks for find -exec rm -rf', () => expect(eval_('find . -exec rm -rf {} \\;').decision).toBe('ask'));
+    it('asks for find -exec with dangerous command', () => expect(eval_('find . -exec sudo rm {} \\;').decision).toBe('deny'));
     it('asks for find -delete', () => expect(eval_('find . -name "*.tmp" -delete').decision).toBe('ask'));
+    it('asks for find -ok', () => expect(eval_('find . -ok rm {} \\;').decision).toBe('ask'));
+    it('allows find -execdir with safe command', () => expect(eval_('find . -execdir cat {} \\;').decision).toBe('allow'));
+    it('allows find -exec grep -l', () => expect(eval_('find ~/dev/src/config -name "*.ts" -exec grep -l "tools: {" {} \\;').decision).toBe('allow'));
 
     // sed
     it('allows sed without -i', () => expect(eval_("sed 's/foo/bar/' file.txt").decision).toBe('allow'));
