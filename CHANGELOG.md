@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.9.0] - 2026-03-08
+
+### Features
+- Warn when argPatterns reference another command name, detecting common misconfiguration (b8a0380)
+- Add clearer examples in reference config for allowing python, node, etc.
+
+### Other Changes
+- ci: use npm trusted publishing (OIDC) instead of NPM_TOKEN (fb57e2c)
+- ci: add npm publish workflow on GitHub release (cf17c14)
+
 ## [1.8.1] - 2026-03-07
 
 ### Bug Fixes
