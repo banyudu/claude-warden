@@ -19980,6 +19980,35 @@ function tryLoadFile(filePath) {
   }
   return null;
 }
+var KNOWN_COMMANDS = /* @__PURE__ */ new Set([
+  ...DEFAULT_CONFIG.layers[0].alwaysAllow,
+  ...DEFAULT_CONFIG.layers[0].alwaysDeny,
+  ...DEFAULT_CONFIG.layers[0].rules.map((r) => r.command)
+]);
+function warnArgPatternCommandMismatch(rule) {
+  if (!Array.isArray(rule.argPatterns)) return;
+  for (const pattern of rule.argPatterns) {
+    const matchers = [
+      ...pattern.match?.anyArgMatches || [],
+      ...pattern.match?.argsMatch || []
+    ];
+    for (const m of matchers) {
+      const literals = extractLiteralsFromPattern(m);
+      for (const lit of literals) {
+        if (lit !== rule.command && KNOWN_COMMANDS.has(lit)) {
+          process.stderr.write(
+            `[warden] Warning: rule for "${rule.command}" has argPattern matching "${lit}" \u2014 this won't work as expected. Rules are matched by the command being run, not its arguments. If you want to control "${lit}", add a separate rule with command: "${lit}".
+`
+          );
+        }
+      }
+    }
+  }
+}
+function extractLiteralsFromPattern(pattern) {
+  let cleaned = pattern.replace(/^\^?\(?(.*?)\)?\$?$/, "$1");
+  return cleaned.split("|").map((s) => s.trim()).filter((s) => /^[a-z][a-z0-9_-]*$/i.test(s));
+}
 function extractLayer(raw) {
   const rules = Array.isArray(raw.rules) ? raw.rules : [];
   for (const rule of rules) {
@@ -19998,6 +20027,7 @@ function extractLayer(raw) {
           }
         }
       }
+      warnArgPatternCommandMismatch(rule);
     }
   }
   return {

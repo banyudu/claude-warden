@@ -2,7 +2,7 @@ import { readFileSync, existsSync } from 'fs';
 import { parse as parseYaml } from 'yaml';
 import { homedir } from 'os';
 import { join } from 'path';
-import type { WardenConfig, ConfigLayer, TrustedTarget } from './types';
+import type { WardenConfig, ConfigLayer, CommandRule, TrustedTarget } from './types';
 import { DEFAULT_CONFIG } from './defaults';
 
 const VALID_DECISIONS = new Set(['allow', 'deny', 'ask']);
@@ -80,6 +80,50 @@ function tryLoadFile(filePath: string): Record<string, unknown> | null {
   return null;
 }
 
+/** Known command names from default config (used for misconfiguration detection) */
+const KNOWN_COMMANDS = new Set([
+  ...DEFAULT_CONFIG.layers[0].alwaysAllow,
+  ...DEFAULT_CONFIG.layers[0].alwaysDeny,
+  ...DEFAULT_CONFIG.layers[0].rules.map(r => r.command),
+]);
+
+/**
+ * Detect likely misconfiguration where argPatterns on one command
+ * seem to reference another command name (e.g. argPatterns on "bash"
+ * matching "python"). This is a common user mistake — rules must
+ * target the actual command being invoked.
+ */
+function warnArgPatternCommandMismatch(rule: CommandRule): void {
+  if (!Array.isArray(rule.argPatterns)) return;
+
+  for (const pattern of rule.argPatterns) {
+    const matchers = [
+      ...(pattern.match?.anyArgMatches || []),
+      ...(pattern.match?.argsMatch || []),
+    ];
+    for (const m of matchers) {
+      // Extract literal command names from simple patterns like 'python', '^python$', '^(python|node)$'
+      const literals = extractLiteralsFromPattern(m);
+      for (const lit of literals) {
+        if (lit !== rule.command && KNOWN_COMMANDS.has(lit)) {
+          process.stderr.write(
+            `[warden] Warning: rule for "${rule.command}" has argPattern matching "${lit}" — ` +
+            `this won't work as expected. Rules are matched by the command being run, not its arguments. ` +
+            `If you want to control "${lit}", add a separate rule with command: "${lit}".\n`
+          );
+        }
+      }
+    }
+  }
+}
+
+function extractLiteralsFromPattern(pattern: string): string[] {
+  // Strip common regex anchors/grouping
+  let cleaned = pattern.replace(/^\^?\(?(.*?)\)?\$?$/, '$1');
+  // Split on | for alternation groups
+  return cleaned.split('|').map(s => s.trim()).filter(s => /^[a-z][a-z0-9_-]*$/i.test(s));
+}
+
 function extractLayer(raw: Record<string, unknown>): ConfigLayer {
   const rules = Array.isArray(raw.rules) ? raw.rules : [];
   for (const rule of rules) {
@@ -96,6 +140,7 @@ function extractLayer(raw: Record<string, unknown>): ConfigLayer {
           }
         }
       }
+      warnArgPatternCommandMismatch(rule);
     }
   }
   return {

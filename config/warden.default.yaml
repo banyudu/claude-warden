@@ -86,9 +86,36 @@ notifyOnDeny: true
 
 # Command-specific rules (override built-in rules by command name).
 # The first scope (project > user > default) with a rule for a given command wins.
+#
+# IMPORTANT: Rules are matched by the command being executed, not by arguments.
+# For example, when Claude runs `python -c "import foo"`, warden looks up rules
+# for command: "python" — NOT "bash" or "sh". A common mistake is writing rules
+# for "bash" with argPatterns matching "python"; this won't work because warden
+# sees the command as "python".
+#
 # rules:
+#   # Allow all python commands
+#   - command: python
+#     default: allow
+#
+#   # Allow python -c but ask for other python usage
+#   - command: python
+#     default: ask
+#     argPatterns:
+#       - match:
+#           anyArgMatches: ['^-c$']
+#         decision: allow
+#         description: Allow python -c inline scripts
+#
+#   # Allow all node.js execution
+#   - command: node
+#     default: allow
+#
+#   # Trust all npx in this project
 #   - command: npx
-#     default: allow          # Trust all npx in this project
+#     default: allow
+#
+#   # Docker with selective allow
 #   - command: docker
 #     default: ask
 #     argPatterns:
