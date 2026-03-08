@@ -1,6 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { evaluate } from '../evaluator';
 import { parseCommand } from '../parser';
+import { loadConfig } from '../rules';
 import { DEFAULT_CONFIG } from '../defaults';
 import type { WardenConfig, ConfigLayer } from '../types';
 
@@ -202,5 +203,67 @@ describe('rule merging across layers', () => {
     expect(evalWith('npx vitest', { layers }).decision).toBe('allow');
     // But unmatched commands now get user's default: deny
     expect(evalWith('npx unknown-xyz', { layers }).decision).toBe('deny');
+  });
+});
+
+describe('config validation warnings', () => {
+  it('warns when argPatterns reference another known command name', () => {
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+
+    const fs = require('fs');
+    const tmpDir = '/tmp/warden-test-validation';
+    fs.mkdirSync(tmpDir, { recursive: true });
+    fs.mkdirSync(`${tmpDir}/.claude`, { recursive: true });
+    fs.writeFileSync(`${tmpDir}/.claude/warden.yaml`, `
+rules:
+  - command: bash
+    default: ask
+    argPatterns:
+      - match:
+          anyArgMatches: ['python']
+        decision: allow
+`);
+
+    loadConfig(tmpDir);
+
+    const warnings = stderrSpy.mock.calls
+      .map(c => String(c[0]))
+      .filter(msg => msg.includes('rule for "bash"') && msg.includes('matching "python"'));
+
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('command: "python"');
+
+    stderrSpy.mockRestore();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('does not warn for legitimate argPatterns', () => {
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+
+    const fs = require('fs');
+    const tmpDir = '/tmp/warden-test-validation-ok';
+    fs.mkdirSync(tmpDir, { recursive: true });
+    fs.mkdirSync(`${tmpDir}/.claude`, { recursive: true });
+    fs.writeFileSync(`${tmpDir}/.claude/warden.yaml`, `
+rules:
+  - command: python
+    default: ask
+    argPatterns:
+      - match:
+          anyArgMatches: ['^-c$']
+        decision: allow
+`);
+
+    loadConfig(tmpDir);
+
+    // Should not warn about python rule matching -c (not a command name)
+    const warnings = stderrSpy.mock.calls
+      .map(c => String(c[0]))
+      .filter(msg => msg.includes('rule for "python"') && msg.includes("won't work as expected"));
+
+    expect(warnings).toHaveLength(0);
+
+    stderrSpy.mockRestore();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 });
