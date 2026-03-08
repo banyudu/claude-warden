@@ -3,6 +3,7 @@ import { evaluate } from './evaluator';
 import { loadConfig } from './rules';
 import { formatSystemMessage } from './suggest';
 import { sendNotification } from './notify';
+import { getYoloState, activateYolo, deactivateYolo, parseYoloCommand } from './yolo';
 import type { HookInput, HookOutput } from './types';
 
 const MAX_STDIN_SIZE = 1024 * 1024; // 1MB
@@ -46,7 +47,68 @@ async function main() {
     process.exit(0);
   }
 
+  // Handle YOLO activation/deactivation commands
+  const yoloCmd = parseYoloCommand(command);
+  if (yoloCmd) {
+    let msg: string;
+    if (yoloCmd.action === 'activate') {
+      const state = activateYolo(input.session_id, yoloCmd.durationMinutes);
+      const expiryInfo = state.expiresAt
+        ? `expires at ${new Date(state.expiresAt).toLocaleTimeString()}`
+        : 'full session, no expiry';
+      msg = `[warden] YOLO mode activated (${expiryInfo}). Always-deny commands are still blocked. Use \`echo __WARDEN_YOLO_DEACTIVATE__\` to turn off.`;
+    } else if (yoloCmd.action === 'deactivate') {
+      deactivateYolo(input.session_id);
+      msg = '[warden] YOLO mode deactivated. Normal rule evaluation resumed.';
+    } else {
+      const state = getYoloState(input.session_id);
+      if (state) {
+        const expiryInfo = state.expiresAt
+          ? `expires at ${new Date(state.expiresAt).toLocaleTimeString()}`
+          : 'full session';
+        msg = `[warden] YOLO mode is active (${expiryInfo})`;
+      } else {
+        msg = '[warden] YOLO mode is not active';
+      }
+    }
+    const output: HookOutput = {
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'allow',
+        permissionDecisionReason: msg,
+      },
+    };
+    process.stdout.write(JSON.stringify(output));
+    process.exit(0);
+  }
+
   const config = loadConfig(input.cwd);
+
+  // Check YOLO mode
+  const yoloState = getYoloState(input.session_id);
+  if (yoloState) {
+    const parsed = parseCommand(command);
+    const result = evaluate(parsed, config);
+
+    // In YOLO mode, only block alwaysDeny commands (unless bypassDeny is set)
+    if (result.decision === 'deny' && !yoloState.bypassDeny) {
+      // Fall through to normal deny handling below
+    } else {
+      const expiryInfo = yoloState.expiresAt
+        ? `expires ${new Date(yoloState.expiresAt).toLocaleTimeString()}`
+        : 'full session';
+      const output: HookOutput = {
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          permissionDecision: 'allow',
+          permissionDecisionReason: `[warden] YOLO mode active (${expiryInfo})`,
+        },
+      };
+      process.stdout.write(JSON.stringify(output));
+      process.exit(0);
+    }
+  }
+
   const parsed = parseCommand(command);
   const result = evaluate(parsed, config);
 

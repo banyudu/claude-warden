@@ -20138,12 +20138,15 @@ function formatSystemMessage(decision, rawCommand, details) {
       return `  Option A: Allow all \`${d.command}\` \u2192 \`/claude-warden:warden-allow ${d.command}\`
   Option B: Allow only \`${d.command} ${sub}\` \u2192 \`/claude-warden:warden-allow ${d.command} ${sub}\``;
     });
+    const yoloHint = "Tip: `/claude-warden:warden-yolo` to temporarily allow all commands";
     if (subcommandHints.length > 0) {
       return `${header}
 ${subcommandHints.join("\n")}
-See /claude-warden:warden-allow`;
+See /claude-warden:warden-allow
+${yoloHint}`;
     }
-    return `${header} \u2014 To auto-allow, see /claude-warden:warden-allow`;
+    return `${header} \u2014 To auto-allow, see /claude-warden:warden-allow
+${yoloHint}`;
   }
   const lines = ["[warden] Command blocked", ""];
   if (relevant.length > 0) {
@@ -20225,6 +20228,72 @@ function sendNotification(title, message, config) {
   }
 }
 
+// src/yolo.ts
+var import_fs2 = require("fs");
+var import_os3 = require("os");
+var import_path3 = require("path");
+function yoloFilePath(sessionId) {
+  return (0, import_path3.join)((0, import_os3.tmpdir)(), `claude-warden-yolo-${sessionId}`);
+}
+function getYoloState(sessionId) {
+  const filePath = yoloFilePath(sessionId);
+  if (!(0, import_fs2.existsSync)(filePath)) return null;
+  try {
+    const raw = (0, import_fs2.readFileSync)(filePath, "utf-8");
+    const state = JSON.parse(raw);
+    if (state.expiresAt && new Date(state.expiresAt) <= /* @__PURE__ */ new Date()) {
+      try {
+        (0, import_fs2.unlinkSync)(filePath);
+      } catch {
+      }
+      return null;
+    }
+    return state;
+  } catch {
+    return null;
+  }
+}
+function activateYolo(sessionId, durationMinutes, bypassDeny = false) {
+  const now = /* @__PURE__ */ new Date();
+  const state = {
+    activatedAt: now.toISOString(),
+    expiresAt: durationMinutes ? new Date(now.getTime() + durationMinutes * 6e4).toISOString() : null,
+    bypassDeny
+  };
+  (0, import_fs2.writeFileSync)(yoloFilePath(sessionId), JSON.stringify(state), "utf-8");
+  return state;
+}
+var YOLO_PATTERN = /^echo\s+__WARDEN_YOLO_(ACTIVATE|DEACTIVATE|STATUS)__(?::(\w+))?$/;
+function parseYoloCommand(command) {
+  const match = command.trim().match(YOLO_PATTERN);
+  if (!match) return null;
+  const action = match[1].toLowerCase();
+  const param = match[2] || null;
+  if (action === "activate") {
+    let durationMinutes = null;
+    if (param && param !== "session") {
+      const m = param.match(/^(\d+)m?$/);
+      if (m) {
+        durationMinutes = parseInt(m[1], 10);
+      } else {
+        return null;
+      }
+    }
+    return { action, durationMinutes };
+  }
+  return { action, durationMinutes: null };
+}
+function deactivateYolo(sessionId) {
+  const filePath = yoloFilePath(sessionId);
+  if (!(0, import_fs2.existsSync)(filePath)) return false;
+  try {
+    (0, import_fs2.unlinkSync)(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // src/index.ts
 var MAX_STDIN_SIZE = 1024 * 1024;
 async function main() {
@@ -20259,7 +20328,54 @@ async function main() {
   if (!command || typeof command !== "string") {
     process.exit(0);
   }
+  const yoloCmd = parseYoloCommand(command);
+  if (yoloCmd) {
+    let msg2;
+    if (yoloCmd.action === "activate") {
+      const state = activateYolo(input.session_id, yoloCmd.durationMinutes);
+      const expiryInfo = state.expiresAt ? `expires at ${new Date(state.expiresAt).toLocaleTimeString()}` : "full session, no expiry";
+      msg2 = `[warden] YOLO mode activated (${expiryInfo}). Always-deny commands are still blocked. Use \`echo __WARDEN_YOLO_DEACTIVATE__\` to turn off.`;
+    } else if (yoloCmd.action === "deactivate") {
+      deactivateYolo(input.session_id);
+      msg2 = "[warden] YOLO mode deactivated. Normal rule evaluation resumed.";
+    } else {
+      const state = getYoloState(input.session_id);
+      if (state) {
+        const expiryInfo = state.expiresAt ? `expires at ${new Date(state.expiresAt).toLocaleTimeString()}` : "full session";
+        msg2 = `[warden] YOLO mode is active (${expiryInfo})`;
+      } else {
+        msg2 = "[warden] YOLO mode is not active";
+      }
+    }
+    const output2 = {
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        permissionDecision: "allow",
+        permissionDecisionReason: msg2
+      }
+    };
+    process.stdout.write(JSON.stringify(output2));
+    process.exit(0);
+  }
   const config = loadConfig(input.cwd);
+  const yoloState = getYoloState(input.session_id);
+  if (yoloState) {
+    const parsed2 = parseCommand(command);
+    const result2 = evaluate(parsed2, config);
+    if (result2.decision === "deny" && !yoloState.bypassDeny) {
+    } else {
+      const expiryInfo = yoloState.expiresAt ? `expires ${new Date(yoloState.expiresAt).toLocaleTimeString()}` : "full session";
+      const output2 = {
+        hookSpecificOutput: {
+          hookEventName: "PreToolUse",
+          permissionDecision: "allow",
+          permissionDecisionReason: `[warden] YOLO mode active (${expiryInfo})`
+        }
+      };
+      process.stdout.write(JSON.stringify(output2));
+      process.exit(0);
+    }
+  }
   const parsed = parseCommand(command);
   const result = evaluate(parsed, config);
   if (result.decision === "allow") {

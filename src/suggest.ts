@@ -84,11 +84,13 @@ export function formatSystemMessage(
         return `  Option A: Allow all \`${d.command}\` → \`/claude-warden:warden-allow ${d.command}\`\n  Option B: Allow only \`${d.command} ${sub}\` → \`/claude-warden:warden-allow ${d.command} ${sub}\``;
       });
 
+    const yoloHint = 'Tip: `/claude-warden:warden-yolo` to temporarily allow all commands';
+
     if (subcommandHints.length > 0) {
-      return `${header}\n${subcommandHints.join('\n')}\nSee /claude-warden:warden-allow`;
+      return `${header}\n${subcommandHints.join('\n')}\nSee /claude-warden:warden-allow\n${yoloHint}`;
     }
 
-    return `${header} — To auto-allow, see /claude-warden:warden-allow`;
+    return `${header} — To auto-allow, see /claude-warden:warden-allow\n${yoloHint}`;
   }
 
   // Verbose format for deny decisions
