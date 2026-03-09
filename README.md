@@ -133,6 +133,29 @@ rules:
         description: Read-only docker commands
 ```
 
+## YOLO mode
+
+Need to temporarily bypass all permission prompts? YOLO mode auto-allows all commands for a limited time or the full session — while still blocking always-deny commands (like `sudo`, `shutdown`) for safety.
+
+### Activate via slash command
+
+```
+/claude-warden:yolo session    # Full session, no expiry
+/claude-warden:yolo 5m         # 5 minutes
+/claude-warden:yolo 15m        # 15 minutes
+/claude-warden:yolo off        # Turn off immediately
+```
+
+Running `/claude-warden:yolo` with no arguments shows a menu of duration options.
+
+### How it works
+
+YOLO mode is **session-scoped** — it only affects the current Claude Code session. The hook intercepts special activation commands and stores state in a temp file keyed by session ID. When a command is evaluated during YOLO mode, the hook skips normal rule evaluation and auto-allows (except always-deny commands). Expired YOLO states are cleaned up automatically.
+
+### Discovery
+
+When Warden prompts you for permission (`ask` decision), the system message includes a tip about YOLO mode so you can discover it when you need it most.
+
 ## Feedback and `/claude-warden:warden-allow`
 
 When Warden blocks or flags a command, it includes a system message explaining:

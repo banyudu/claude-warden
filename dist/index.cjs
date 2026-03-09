@@ -20138,7 +20138,7 @@ function formatSystemMessage(decision, rawCommand, details) {
       return `  Option A: Allow all \`${d.command}\` \u2192 \`/claude-warden:warden-allow ${d.command}\`
   Option B: Allow only \`${d.command} ${sub}\` \u2192 \`/claude-warden:warden-allow ${d.command} ${sub}\``;
     });
-    const yoloHint = "Tip: `/claude-warden:warden-yolo` to temporarily allow all commands";
+    const yoloHint = "Tip: `/claude-warden:yolo` to temporarily allow all commands";
     if (subcommandHints.length > 0) {
       return `${header}
 ${subcommandHints.join("\n")}

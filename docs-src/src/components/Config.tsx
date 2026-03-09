@@ -114,6 +114,11 @@ export function Config() {
               path: 'notifyOnAsk · notifyOnDeny',
               desc: 'Get OS notifications when warden prompts for permission or blocks a command.',
             },
+            {
+              title: 'YOLO Mode',
+              path: '/claude-warden:yolo 5m',
+              desc: 'Temporarily auto-allow all commands for a set duration or the full session. Always-deny commands stay blocked for safety.',
+            },
           ].map((feature, i) => (
             <motion.div
               key={feature.title}
