@@ -48,7 +48,7 @@ Two commands inside Claude Code:
 
 ```
 /plugin marketplace add banyudu/claude-warden
-/plugin install claude-warden@claude-warden
+/plugin install warden@claude-warden
 ```
 
 That's it. Restart Claude Code and Warden is active.

@@ -48,7 +48,7 @@ export function Hero() {
   }, [showDecision])
 
   const copyInstall = useCallback(() => {
-    navigator.clipboard.writeText('claude plugin install claude-warden@claude-warden')
+    navigator.clipboard.writeText('claude plugin install warden@claude-warden')
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }, [])
@@ -199,7 +199,7 @@ export function Hero() {
           }}
         >
           <span style={{ color: 'var(--text-muted)' }}>$</span>
-          claude plugin install claude-warden@claude-warden
+          claude plugin install warden@claude-warden
           <span style={{ color: copied ? 'var(--color-allow)' : 'var(--text-muted)', fontSize: 12, minWidth: 40 }}>
             {copied ? 'Copied!' : 'Copy'}
           </span>

@@ -41,7 +41,7 @@
     "release:minor": "scripts/release.sh minor",
     "release:major": "scripts/release.sh major",
     "prepublishOnly": "pnpm run sync-plugin-version && pnpm run build && pnpm run test",
-    "postpublish": "claude plugin update claude-warden@local 2>/dev/null; claude plugin update claude-warden@claude-warden 2>/dev/null; echo 'Plugin caches updated'",
+    "postpublish": "claude plugin update claude-warden@local 2>/dev/null; claude plugin update warden@claude-warden 2>/dev/null; echo 'Plugin caches updated'",
     "docs:dev": "cd docs-src && pnpm dev",
     "docs:build": "cd docs-src && pnpm install && pnpm build"
   },
