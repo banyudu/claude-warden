@@ -81,16 +81,16 @@ export function formatSystemMessage(
       .filter(d => d.args.length > 0)
       .map(d => {
         const sub = d.args[0];
-        return `  Option A: Allow all \`${d.command}\` → \`/claude-warden:warden-allow ${d.command}\`\n  Option B: Allow only \`${d.command} ${sub}\` → \`/claude-warden:warden-allow ${d.command} ${sub}\``;
+        return `  Option A: Allow all \`${d.command}\` → \`/warden:allow ${d.command}\`\n  Option B: Allow only \`${d.command} ${sub}\` → \`/warden:allow ${d.command} ${sub}\``;
       });
 
-    const yoloHint = 'Tip: `/claude-warden:yolo` to temporarily allow all commands';
+    const yoloHint = 'Tip: `/warden:yolo` to temporarily allow all commands';
 
     if (subcommandHints.length > 0) {
-      return `${header}\n${subcommandHints.join('\n')}\nSee /claude-warden:warden-allow\n${yoloHint}`;
+      return `${header}\n${subcommandHints.join('\n')}\nSee /warden:allow\n${yoloHint}`;
     }
 
-    return `${header} — To auto-allow, see /claude-warden:warden-allow\n${yoloHint}`;
+    return `${header} — To auto-allow, see /warden:allow\n${yoloHint}`;
   }
 
   // Verbose format for deny decisions

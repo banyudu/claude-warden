@@ -2002,7 +2002,7 @@ var init_vlq = __esm({
   }
 });
 
-// node_modules/.pnpm/magic-string@0.16.0/node_modules/magic-string/dist/magic-string.es6.js
+// node_modules/.pnpm/bash-parser@0.5.0/node_modules/bash-parser/node_modules/magic-string/dist/magic-string.es6.js
 var magic_string_es6_exports = {};
 __export(magic_string_es6_exports, {
   Bundle: () => Bundle,
@@ -2235,7 +2235,7 @@ function Bundle(options) {
 }
 var _btoa, btoa2, nonWhitespace, toString3, hasOwnProp, magic_string_es6_default;
 var init_magic_string_es6 = __esm({
-  "node_modules/.pnpm/magic-string@0.16.0/node_modules/magic-string/dist/magic-string.es6.js"() {
+  "node_modules/.pnpm/bash-parser@0.5.0/node_modules/bash-parser/node_modules/magic-string/dist/magic-string.es6.js"() {
     "use strict";
     init_vlq();
     Chunk.prototype = {
@@ -20135,17 +20135,17 @@ function formatSystemMessage(decision, rawCommand, details) {
     const header = `[warden] ${parts.join(" | ")}`;
     const subcommandHints = relevant.filter((d) => d.args.length > 0).map((d) => {
       const sub = d.args[0];
-      return `  Option A: Allow all \`${d.command}\` \u2192 \`/claude-warden:warden-allow ${d.command}\`
-  Option B: Allow only \`${d.command} ${sub}\` \u2192 \`/claude-warden:warden-allow ${d.command} ${sub}\``;
+      return `  Option A: Allow all \`${d.command}\` \u2192 \`/warden:allow ${d.command}\`
+  Option B: Allow only \`${d.command} ${sub}\` \u2192 \`/warden:allow ${d.command} ${sub}\``;
     });
-    const yoloHint = "Tip: `/claude-warden:yolo` to temporarily allow all commands";
+    const yoloHint = "Tip: `/warden:yolo` to temporarily allow all commands";
     if (subcommandHints.length > 0) {
       return `${header}
 ${subcommandHints.join("\n")}
-See /claude-warden:warden-allow
+See /warden:allow
 ${yoloHint}`;
     }
-    return `${header} \u2014 To auto-allow, see /claude-warden:warden-allow
+    return `${header} \u2014 To auto-allow, see /warden:allow
 ${yoloHint}`;
   }
   const lines = ["[warden] Command blocked", ""];

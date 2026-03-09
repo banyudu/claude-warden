@@ -6,7 +6,7 @@
   },
   "plugins": [
     {
-      "name": "claude-warden",
+      "name": "warden",
       "description": "Auto-approves safe commands, blocks dangerous ones, prompts for the rest",
       "version": "1.0.1",
       "author": {

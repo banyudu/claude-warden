@@ -11,19 +11,19 @@ Parse the argument to determine the action:
 
 ### Activate YOLO mode
 
-- `/claude-warden:yolo session` — YOLO for the full session (no expiry)
-- `/claude-warden:yolo 5m` — YOLO for 5 minutes
-- `/claude-warden:yolo 15m` — YOLO for 15 minutes
-- `/claude-warden:yolo 30m` — YOLO for 30 minutes
-- `/claude-warden:yolo <N>m` — YOLO for N minutes (any number)
+- `/warden:yolo session` — YOLO for the full session (no expiry)
+- `/warden:yolo 5m` — YOLO for 5 minutes
+- `/warden:yolo 15m` — YOLO for 15 minutes
+- `/warden:yolo 30m` — YOLO for 30 minutes
+- `/warden:yolo <N>m` — YOLO for N minutes (any number)
 
 ### Deactivate YOLO mode
 
-- `/claude-warden:yolo off` — Turn off YOLO mode immediately
+- `/warden:yolo off` — Turn off YOLO mode immediately
 
 ### No arguments
 
-- `/claude-warden:yolo` — Show the user the available options and ask them to choose:
+- `/warden:yolo` — Show the user the available options and ask them to choose:
   1. Full session — no expiry, lasts until session ends or manually turned off
   2. 5 minutes
   3. 15 minutes
@@ -61,5 +61,5 @@ Run: `echo __WARDEN_YOLO_STATUS__`
 Confirm to the user:
 - YOLO mode is now active
 - Duration / expiry time (or "full session" if no expiry)
-- How to turn it off: `/claude-warden:yolo off`
+- How to turn it off: `/warden:yolo off`
 - Safety reminder: always-deny commands are still blocked

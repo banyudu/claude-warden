@@ -140,13 +140,13 @@ Need to temporarily bypass all permission prompts? YOLO mode auto-allows all com
 ### Activate via slash command
 
 ```
-/claude-warden:yolo session    # Full session, no expiry
-/claude-warden:yolo 5m         # 5 minutes
-/claude-warden:yolo 15m        # 15 minutes
-/claude-warden:yolo off        # Turn off immediately
+/warden:yolo session    # Full session, no expiry
+/warden:yolo 5m         # 5 minutes
+/warden:yolo 15m        # 15 minutes
+/warden:yolo off        # Turn off immediately
 ```
 
-Running `/claude-warden:yolo` with no arguments shows a menu of duration options.
+Running `/warden:yolo` with no arguments shows a menu of duration options.
 
 ### How it works
 
@@ -156,14 +156,14 @@ YOLO mode is **session-scoped** — it only affects the current Claude Code sess
 
 When Warden prompts you for permission (`ask` decision), the system message includes a tip about YOLO mode so you can discover it when you need it most.
 
-## Feedback and `/claude-warden:warden-allow`
+## Feedback and `/warden:allow`
 
 When Warden blocks or flags a command, it includes a system message explaining:
 
 1. **Why** the command was blocked/flagged (per-command reasons)
 2. **How to allow it** — a ready-to-use YAML snippet for your config
 
-Use the `/claude-warden:warden-allow` slash command to apply the suggested config change. It will ask which scope (project or user) to use.
+Use the `/warden:allow` slash command to apply the suggested config change. It will ask which scope (project or user) to use.
 
 ## Built-in defaults
 

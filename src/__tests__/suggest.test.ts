@@ -114,7 +114,7 @@ describe('formatSystemMessage', () => {
     expect(msg).toContain('`node`: Default for "node"');
     expect(msg).toContain('Option A: Allow all `node`');
     expect(msg).toContain('Option B: Allow only `node script.js`');
-    expect(msg).toContain('/claude-warden:warden-allow');
+    expect(msg).toContain('/warden:allow');
     expect(msg).not.toContain('```yaml');
   });
 
@@ -123,7 +123,7 @@ describe('formatSystemMessage', () => {
       { command: 'my-tool', args: [], decision: 'ask', reason: 'No rule', matchedRule: 'default' },
     ]);
     expect(msg).toContain('[warden]');
-    expect(msg).toContain('— To auto-allow, see /claude-warden:warden-allow');
+    expect(msg).toContain('— To auto-allow, see /warden:allow');
     expect(msg).not.toContain('Option A');
   });
 
@@ -156,8 +156,8 @@ describe('formatSystemMessage', () => {
     const msg = formatSystemMessage('ask', 'npx clawhub inspect', [
       { command: 'npx', args: ['clawhub', 'inspect'], decision: 'ask', reason: 'Default for "npx"', matchedRule: 'npx:default' },
     ]);
-    expect(msg).toContain('Option A: Allow all `npx` → `/claude-warden:warden-allow npx`');
-    expect(msg).toContain('Option B: Allow only `npx clawhub` → `/claude-warden:warden-allow npx clawhub`');
+    expect(msg).toContain('Option A: Allow all `npx` → `/warden:allow npx`');
+    expect(msg).toContain('Option B: Allow only `npx clawhub` → `/warden:allow npx clawhub`');
     expect(msg).not.toContain('```yaml');
   });
 
@@ -170,6 +170,6 @@ describe('formatSystemMessage', () => {
     expect(msg).toContain('`unknown-tool`: No rule for "unknown-tool"');
     expect(msg).toContain('Option A: Allow all `node`');
     expect(msg).toContain('Option B: Allow only `node script.js`');
-    expect(msg).toContain('/claude-warden:warden-allow');
+    expect(msg).toContain('/warden:allow');
   });
 });

@@ -5,11 +5,11 @@ user_invocable: true
 
 This command supports two modes:
 
-## Mode 1: With arguments (e.g., `/claude-warden:warden-allow npx clawhub`)
+## Mode 1: With arguments (e.g., `/warden:allow npx clawhub`)
 
 Parse the argument to extract the command and optional sub-command:
-- If a single word (e.g., `/claude-warden:warden-allow npx`): allow the entire command.
-- If multiple words (e.g., `/claude-warden:warden-allow npx clawhub`): the first word is the command, the second is the sub-command. Ask the user which option they prefer:
+- If a single word (e.g., `/warden:allow npx`): allow the entire command.
+- If multiple words (e.g., `/warden:allow npx clawhub`): the first word is the command, the second is the sub-command. Ask the user which option they prefer:
 
   **Option A — Allow all `<command>`**: Adds a rule with `default: allow` for the entire command.
   ```yaml
@@ -32,7 +32,7 @@ Parse the argument to extract the command and optional sub-command:
 
 After the user picks an option, proceed to apply the YAML snippet (see "Applying the config" below).
 
-## Mode 2: No arguments (e.g., `/claude-warden:warden-allow`)
+## Mode 2: No arguments (e.g., `/warden:allow`)
 
 Look at the most recent warden block or flagged message in the conversation. It should contain either:
 - A YAML snippet showing how to allow the blocked/flagged command, or
