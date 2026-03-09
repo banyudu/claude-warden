@@ -1,10 +1,14 @@
 # Changelog
 
-## [1.10.0] - 2026-03-09
+## [2.0.0] - 2026-03-09
+
+### Breaking Changes
+- Rename plugin to warden, rename warden-allow to allow (bb5cec9)
 
 ### Features
+- Add Codex execpolicy rules exporter (ca27d83)
 - Add session-scoped YOLO mode for temporary auto-allow with configurable duration (b7c8d11)
-- New `/claude-warden:yolo` slash command to activate/deactivate YOLO mode
+- New `/warden:yolo` slash command to activate/deactivate YOLO mode
 - YOLO hint shown on ask decisions for discoverability
 - Always-deny commands remain blocked even in YOLO mode for safety
 
