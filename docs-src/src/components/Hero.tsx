@@ -48,7 +48,7 @@ export function Hero() {
   }, [showDecision])
 
   const copyInstall = useCallback(() => {
-    navigator.clipboard.writeText('claude plugin install warden@claude-warden')
+    navigator.clipboard.writeText('/plugin marketplace add banyudu/claude-warden\n/plugin install warden@claude-warden')
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }, [])
@@ -198,9 +198,11 @@ export function Hero() {
             transition: 'border-color 0.2s',
           }}
         >
-          <span style={{ color: 'var(--text-muted)' }}>$</span>
-          claude plugin install warden@claude-warden
-          <span style={{ color: copied ? 'var(--color-allow)' : 'var(--text-muted)', fontSize: 12, minWidth: 40 }}>
+          <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
+            <span><span style={{ color: 'var(--text-muted)' }}>&gt;</span> /plugin marketplace add banyudu/claude-warden</span>
+            <span><span style={{ color: 'var(--text-muted)' }}>&gt;</span> /plugin install warden@claude-warden</span>
+          </span>
+          <span style={{ color: copied ? 'var(--color-allow)' : 'var(--text-muted)', fontSize: 12, minWidth: 40, alignSelf: 'center' }}>
             {copied ? 'Copied!' : 'Copy'}
           </span>
         </motion.button>
