@@ -2002,7 +2002,7 @@ var init_vlq = __esm({
   }
 });
 
-// node_modules/.pnpm/bash-parser@0.5.0/node_modules/bash-parser/node_modules/magic-string/dist/magic-string.es6.js
+// node_modules/.pnpm/magic-string@0.16.0/node_modules/magic-string/dist/magic-string.es6.js
 var magic_string_es6_exports = {};
 __export(magic_string_es6_exports, {
   Bundle: () => Bundle,
@@ -2235,7 +2235,7 @@ function Bundle(options) {
 }
 var _btoa, btoa2, nonWhitespace, toString3, hasOwnProp, magic_string_es6_default;
 var init_magic_string_es6 = __esm({
-  "node_modules/.pnpm/bash-parser@0.5.0/node_modules/bash-parser/node_modules/magic-string/dist/magic-string.es6.js"() {
+  "node_modules/.pnpm/magic-string@0.16.0/node_modules/magic-string/dist/magic-string.es6.js"() {
     "use strict";
     init_vlq();
     Chunk.prototype = {
@@ -18726,12 +18726,18 @@ function evaluateXargsCommand(cmd, config, depth = 0) {
       matchedRule: "xargs:subcommand"
     };
   }
-  const parsed = {
-    commands: [subcommand],
-    hasSubshell: false,
-    subshellCommands: [],
-    parseError: false
-  };
+  const isShellExec = (subcommand.command === "sh" || subcommand.command === "bash" || subcommand.command === "zsh") && subcommand.args.length >= 2 && subcommand.args[0] === "-c";
+  let parsed;
+  if (isShellExec) {
+    const innerResult = parseCommand(subcommand.args[1]);
+    if (innerResult.parseError) {
+      parsed = { commands: [subcommand], hasSubshell: false, subshellCommands: [], parseError: false };
+    } else {
+      parsed = innerResult;
+    }
+  } else {
+    parsed = { commands: [subcommand], hasSubshell: false, subshellCommands: [], parseError: false };
+  }
   const result = evaluate(parsed, config, depth + 1);
   return {
     command,
