@@ -335,12 +335,24 @@ function evaluateXargsCommand(cmd: ParsedCommand, config: WardenConfig, depth: n
     };
   }
 
-  const parsed: ParseResult = {
-    commands: [subcommand],
-    hasSubshell: false,
-    subshellCommands: [],
-    parseError: false,
-  };
+  // Handle sh/bash/zsh -c "..." — recursively parse inner command
+  const isShellExec =
+    (subcommand.command === 'sh' || subcommand.command === 'bash' || subcommand.command === 'zsh') &&
+    subcommand.args.length >= 2 &&
+    subcommand.args[0] === '-c';
+
+  let parsed: ParseResult;
+  if (isShellExec) {
+    const innerResult = parseCommand(subcommand.args[1]);
+    if (innerResult.parseError) {
+      parsed = { commands: [subcommand], hasSubshell: false, subshellCommands: [], parseError: false };
+    } else {
+      parsed = innerResult;
+    }
+  } else {
+    parsed = { commands: [subcommand], hasSubshell: false, subshellCommands: [], parseError: false };
+  }
+
   const result = evaluate(parsed, config, depth + 1);
 
   return {
