@@ -2,12 +2,13 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { existsSync, unlinkSync, readFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { randomUUID } from 'crypto';
 import { getYoloState, activateYolo, deactivateYolo, parseYoloCommand } from '../yolo';
 
-const TEST_SESSION = 'test-session-yolo-123';
+let testSession: string;
 
 function yoloFile() {
-  return join(tmpdir(), `claude-warden-yolo-${TEST_SESSION}`);
+  return join(tmpdir(), `claude-warden-yolo-${testSession}`);
 }
 
 function cleanup() {
@@ -15,25 +16,27 @@ function cleanup() {
 }
 
 describe('yolo', () => {
-  beforeEach(cleanup);
+  beforeEach(() => {
+    testSession = `test-yolo-${randomUUID()}`;
+  });
   afterEach(cleanup);
 
   describe('getYoloState', () => {
     it('returns null when no state file exists', () => {
-      expect(getYoloState(TEST_SESSION)).toBeNull();
+      expect(getYoloState(testSession)).toBeNull();
     });
 
     it('returns state for active full-session YOLO', () => {
-      activateYolo(TEST_SESSION, null);
-      const state = getYoloState(TEST_SESSION);
+      activateYolo(testSession, null);
+      const state = getYoloState(testSession);
       expect(state).not.toBeNull();
       expect(state!.expiresAt).toBeNull();
       expect(state!.activatedAt).toBeTruthy();
     });
 
     it('returns state for active time-limited YOLO', () => {
-      activateYolo(TEST_SESSION, 15);
-      const state = getYoloState(TEST_SESSION);
+      activateYolo(testSession, 15);
+      const state = getYoloState(testSession);
       expect(state).not.toBeNull();
       expect(state!.expiresAt).toBeTruthy();
       const expiry = new Date(state!.expiresAt!);
@@ -41,8 +44,8 @@ describe('yolo', () => {
     });
 
     it('returns null and cleans up for expired YOLO', () => {
-      activateYolo(TEST_SESSION, -1); // already expired
-      const state = getYoloState(TEST_SESSION);
+      activateYolo(testSession, -1); // already expired
+      const state = getYoloState(testSession);
       expect(state).toBeNull();
       expect(existsSync(yoloFile())).toBe(false);
     });
@@ -50,13 +53,13 @@ describe('yolo', () => {
     it('returns null for corrupted state file', () => {
       const { writeFileSync } = require('fs');
       writeFileSync(yoloFile(), 'not json', 'utf-8');
-      expect(getYoloState(TEST_SESSION)).toBeNull();
+      expect(getYoloState(testSession)).toBeNull();
     });
   });
 
   describe('activateYolo', () => {
     it('creates state file for full session', () => {
-      const state = activateYolo(TEST_SESSION, null);
+      const state = activateYolo(testSession, null);
       expect(state.expiresAt).toBeNull();
       expect(existsSync(yoloFile())).toBe(true);
 
@@ -65,7 +68,7 @@ describe('yolo', () => {
     });
 
     it('creates state file with expiry for time-limited', () => {
-      const state = activateYolo(TEST_SESSION, 5);
+      const state = activateYolo(testSession, 5);
       expect(state.expiresAt).toBeTruthy();
       const expiry = new Date(state.expiresAt!);
       const expectedMin = Date.now() + 4 * 60_000;
@@ -75,27 +78,27 @@ describe('yolo', () => {
     });
 
     it('supports bypassDeny flag', () => {
-      const state = activateYolo(TEST_SESSION, null, true);
+      const state = activateYolo(testSession, null, true);
       expect(state.bypassDeny).toBe(true);
     });
 
     it('overwrites existing state', () => {
-      activateYolo(TEST_SESSION, 5);
-      activateYolo(TEST_SESSION, null);
-      const state = getYoloState(TEST_SESSION);
+      activateYolo(testSession, 5);
+      activateYolo(testSession, null);
+      const state = getYoloState(testSession);
       expect(state!.expiresAt).toBeNull();
     });
   });
 
   describe('deactivateYolo', () => {
     it('removes state file and returns true', () => {
-      activateYolo(TEST_SESSION, null);
-      expect(deactivateYolo(TEST_SESSION)).toBe(true);
+      activateYolo(testSession, null);
+      expect(deactivateYolo(testSession)).toBe(true);
       expect(existsSync(yoloFile())).toBe(false);
     });
 
     it('returns false when no state file exists', () => {
-      expect(deactivateYolo(TEST_SESSION)).toBe(false);
+      expect(deactivateYolo(testSession)).toBe(false);
     });
   });
 
