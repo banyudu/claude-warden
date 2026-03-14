@@ -36,6 +36,13 @@ The hook communicates with Claude Code via the PreToolUse hook protocol:
 - **Ask**: stdout JSON with `permissionDecision: "ask"` (falls through to user prompt)
 - **Deny**: exit code 2 with reason on stderr
 
+## Releasing
+
+Releases are done remotely by creating a GitHub release (not by publishing locally). A CI workflow handles npm publishing via OIDC trusted publishing when a release is created.
+
+1. Merge PR to `main`
+2. `gh release create vX.Y.Z --target main --title "vX.Y.Z" --notes "..."`
+
 ## Plugin Structure
 
 - `.claude-plugin/plugin.json` — Plugin metadata
