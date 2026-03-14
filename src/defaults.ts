@@ -177,6 +177,7 @@ export const DEFAULT_CONFIG: WardenConfig = {
         default: 'ask',
         argPatterns: [
           { match: { anyArgMatches: ['^--(version|help)$', '^-[vh]$'] }, decision: 'allow', description: 'Version/help flags' },
+          { match: { argsMatch: ['^plugin(s)?\\s+(list|help|validate|marketplace\\s+(list|help))\\b'] }, decision: 'allow', description: 'Read-only plugin commands' },
         ],
       },
 
