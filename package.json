@@ -1,6 +1,6 @@
 {
   "name": "claude-warden",
-  "version": "2.0.1",
+  "version": "2.1.1",
   "description": "Smart command safety filter for Claude Code — auto-approves safe commands, blocks dangerous ones",
   "type": "module",
   "main": "dist/index.cjs",
