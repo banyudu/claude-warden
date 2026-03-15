@@ -169,6 +169,17 @@ Need to temporarily bypass all permission prompts? YOLO mode auto-allows all com
 
 Running `/warden:yolo` with no arguments shows a menu of duration options.
 
+### Activate via environment variable
+
+For non-interactive sessions where `/warden:yolo` can't be invoked (e.g. piped prompts), set the `WARDEN_YOLO` env var:
+
+```bash
+WARDEN_YOLO=true claude < prompts.txt
+WARDEN_YOLO=1 claude < prompts.txt
+```
+
+Unlike the slash command, `WARDEN_YOLO` bypasses **all** checks including always-deny commands — it short-circuits before any parsing or evaluation, same as `--dangerously-skip-permissions`.
+
 ### How it works
 
 YOLO mode is **session-scoped** — it only affects the current Claude Code session. The hook intercepts special activation commands and stores state in a temp file keyed by session ID. When a command is evaluated during YOLO mode, the hook skips normal rule evaluation and auto-allows (except always-deny commands). Expired YOLO states are cleaned up automatically.

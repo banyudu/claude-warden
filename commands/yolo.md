@@ -49,10 +49,21 @@ Run: `echo __WARDEN_YOLO_DEACTIVATE__`
 
 Run: `echo __WARDEN_YOLO_STATUS__`
 
+## Environment variable
+
+For non-interactive sessions where this slash command can't be invoked (e.g. piped prompts), the `WARDEN_YOLO` env var can be used instead:
+
+```bash
+WARDEN_YOLO=true claude < prompts.txt
+WARDEN_YOLO=1 claude < prompts.txt
+```
+
+Note: Unlike the slash command, `WARDEN_YOLO` bypasses **all** checks including always-deny commands — it short-circuits before any parsing or evaluation.
+
 ## Important
 
 - These echo commands are intercepted by the warden hook — their output in the terminal is not meaningful. The hook's permission decision reason will contain the confirmation message.
-- Always-deny commands (sudo, shutdown, etc.) are **still blocked** even in YOLO mode for safety.
+- Always-deny commands (sudo, shutdown, etc.) are **still blocked** even in YOLO mode for safety (slash command only — the env var bypasses all checks).
 - YOLO state files are automatically cleaned up when they expire.
 - YOLO mode only affects the current session — other sessions are not impacted.
 
