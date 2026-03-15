@@ -51,3 +51,29 @@ describe('dangerously-skip-permissions mode', () => {
     expect(skipIndex).toBeLessThan(parseIndex);
   });
 });
+
+describe('WARDEN_YOLO env var', () => {
+  it('index.ts checks WARDEN_YOLO env var', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+    const indexSrc = fs.readFileSync(
+      path.resolve(__dirname, '../index.ts'),
+      'utf-8',
+    );
+    expect(indexSrc).toContain("process.env.WARDEN_YOLO === 'true'");
+    expect(indexSrc).toContain("process.env.WARDEN_YOLO === '1'");
+  });
+
+  it('WARDEN_YOLO check comes before parseCommand', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+    const indexSrc = fs.readFileSync(
+      path.resolve(__dirname, '../index.ts'),
+      'utf-8',
+    );
+    const yoloIndex = indexSrc.indexOf("process.env.WARDEN_YOLO");
+    const parseIndex = indexSrc.indexOf('parseCommand(command)');
+    expect(yoloIndex).toBeGreaterThan(-1);
+    expect(yoloIndex).toBeLessThan(parseIndex);
+  });
+});

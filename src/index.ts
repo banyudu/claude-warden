@@ -42,6 +42,11 @@ async function main() {
     process.exit(0);
   }
 
+  // Auto-allow when WARDEN_YOLO env var is set
+  if (process.env.WARDEN_YOLO === 'true' || process.env.WARDEN_YOLO === '1') {
+    process.exit(0);
+  }
+
   const command = input.tool_input?.command;
   if (!command || typeof command !== 'string') {
     process.exit(0);

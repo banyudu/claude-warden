@@ -20331,6 +20331,9 @@ async function main() {
   if (input.permission_mode === "dangerously-skip-permissions") {
     process.exit(0);
   }
+  if (process.env.WARDEN_YOLO === "true" || process.env.WARDEN_YOLO === "1") {
+    process.exit(0);
+  }
   const command = input.tool_input?.command;
   if (!command || typeof command !== "string") {
     process.exit(0);
