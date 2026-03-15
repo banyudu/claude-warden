@@ -1,0 +1,44 @@
+name: Auto Release
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    if: startsWith(github.event.head_commit.message, 'chore: release v')
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract version from commit message
+        id: version
+        env:
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+        run: |
+          VERSION=$(echo "$COMMIT_MSG" | grep -oP 'v\d+\.\d+\.\d+')
+          if [ -z "$VERSION" ]; then
+            echo "No version found in commit message"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+      - name: Extract changelog for this version
+        id: changelog
+        env:
+          VERSION_TAG: ${{ steps.version.outputs.version }}
+        run: |
+          VERSION_NUM="${VERSION_TAG#v}"
+          CHANGELOG=$(awk "/^## \[${VERSION_NUM}\]/{found=1; next} /^## \[/{if(found) exit} found{print}" CHANGELOG.md)
+          echo "notes<<CHANGELOG_EOF" >> "$GITHUB_OUTPUT"
+          echo "$CHANGELOG" >> "$GITHUB_OUTPUT"
+          echo "CHANGELOG_EOF" >> "$GITHUB_OUTPUT"
+      - name: Create tag and release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+          RELEASE_NOTES: ${{ steps.changelog.outputs.notes }}
+        run: |
+          git tag "$VERSION"
+          git push origin "$VERSION"
+          gh release create "$VERSION" --title "$VERSION" --notes "$RELEASE_NOTES"

@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.2.0] - 2026-03-15
+
+### Features
+- Support WARDEN_YOLO env var for non-interactive sessions (bd16d76)
+- Update publish command to exclude git checks (af2a56f)
+- Add vitest config to exclude worktree test files from test runs
+- Update `/release` skill to auto-decide version bump (patch/minor) based on commit types, never auto-select major
+
 ## [2.0.0] - 2026-03-09
 
 ### Breaking Changes
