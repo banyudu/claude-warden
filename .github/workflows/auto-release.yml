@@ -9,6 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write
     if: "startsWith(github.event.head_commit.message, 'chore: release v')"
     steps:
       - uses: actions/checkout@v4
@@ -42,3 +43,15 @@ jobs:
           git tag "$VERSION"
           git push origin "$VERSION"
           gh release create "$VERSION" --title "$VERSION" --notes "$RELEASE_NOTES"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run test
+      - run: pnpm run build
+      - run: pnpm publish --access public --no-git-checks --provenance
