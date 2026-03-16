@@ -3977,12 +3977,12 @@ var require_lib = __commonJS({
         }
         return code;
       };
-      Tokenizer2.prototype.readString = function readString(quote) {
+      Tokenizer2.prototype.readString = function readString(quote2) {
         var out = "", chunkStart = ++this.state.pos;
         for (; ; ) {
           if (this.state.pos >= this.input.length) this.raise(this.state.start, "Unterminated string constant");
           var ch = this.input.charCodeAt(this.state.pos);
-          if (ch === quote) break;
+          if (ch === quote2) break;
           if (ch === 92) {
             out += this.input.slice(chunkStart, this.state.pos);
             out += this.readEscapedChar(false);
@@ -8346,7 +8346,7 @@ var require_lib = __commonJS({
       this.state.lineStart = this.state.pos;
       return out;
     };
-    pp$9.jsxReadString = function(quote) {
+    pp$9.jsxReadString = function(quote2) {
       var out = "";
       var chunkStart = ++this.state.pos;
       for (; ; ) {
@@ -8354,7 +8354,7 @@ var require_lib = __commonJS({
           this.raise(this.state.start, "Unterminated string constant");
         }
         var ch = this.input.charCodeAt(this.state.pos);
-        if (ch === quote) break;
+        if (ch === quote2) break;
         if (ch === 38) {
           out += this.input.slice(chunkStart, this.state.pos);
           out += this.jsxReadEntity();
@@ -8933,7 +8933,7 @@ var require_shell_quote_word = __commonJS({
         var SQ = "'";
         var DQ = '"';
         var BS = "\\";
-        var quote = false;
+        var quote2 = false;
         var esc = false;
         var out = "";
         for (var i2 = 0, len = s2.length; i2 < len; i2++) {
@@ -8941,10 +8941,10 @@ var require_shell_quote_word = __commonJS({
           if (esc) {
             out += c;
             esc = false;
-          } else if (quote) {
-            if (c === quote) {
-              quote = false;
-            } else if (quote === SQ) {
+          } else if (quote2) {
+            if (c === quote2) {
+              quote2 = false;
+            } else if (quote2 === SQ) {
               out += c;
             } else if (c === BS) {
               i2 += 1;
@@ -8958,7 +8958,7 @@ var require_shell_quote_word = __commonJS({
               out += c;
             }
           } else if (c === DQ || c === SQ) {
-            quote = c;
+            quote2 = c;
           } else if (RegExp("^#$").test(c)) {
             commented = true;
             if (out.length) {
@@ -16827,9 +16827,9 @@ var require_lexer = __commonJS({
         }
       }
       *parseQuotedScalar() {
-        const quote = this.charAt(0);
-        let end = this.buffer.indexOf(quote, this.pos + 1);
-        if (quote === "'") {
+        const quote2 = this.charAt(0);
+        let end = this.buffer.indexOf(quote2, this.pos + 1);
+        if (quote2 === "'") {
           while (end !== -1 && this.buffer[end + 1] === "'")
             end = this.buffer.indexOf("'", end + 2);
         } else {
@@ -18135,6 +18135,13 @@ var require_dist2 = __commonJS({
   }
 });
 
+// src/codex-export.ts
+var import_fs2 = require("fs");
+var import_path3 = require("path");
+
+// src/evaluator.ts
+var import_os = require("os");
+
 // src/parser.ts
 var import_bash_parser = __toESM(require_src(), 1);
 var import_path = require("path");
@@ -18149,10 +18156,10 @@ function preprocessPathParentheses(input) {
   while (i < input.length) {
     const ch = input[i];
     if (ch === '"' || ch === "'") {
-      const quote = ch;
+      const quote2 = ch;
       let j = i + 1;
-      while (j < input.length && input[j] !== quote) {
-        if (input[j] === "\\" && quote === '"') j++;
+      while (j < input.length && input[j] !== quote2) {
+        if (input[j] === "\\" && quote2 === '"') j++;
         j++;
       }
       result.push(input.slice(i, j + 1));
@@ -18455,7 +18462,6 @@ function regexFallbackParse(input) {
 }
 
 // src/evaluator.ts
-var import_os = require("os");
 function safeRegexTest(pattern, input) {
   try {
     return new RegExp(pattern).test(input);
@@ -19215,6 +19221,51 @@ function evaluateSpriteExec(cmd, config, depth = 0) {
     reason: `Trusted sprite "${spriteName}" (${result.reason})`,
     matchedRule: "trustedSprites"
   };
+}
+
+// src/codex.ts
+function toCodexDecision(decision) {
+  if (decision === "allow") return "allow";
+  if (decision === "ask") return "prompt";
+  return "forbidden";
+}
+function quote(value) {
+  return JSON.stringify(value);
+}
+function collectCandidateCommands(config) {
+  const names = /* @__PURE__ */ new Set();
+  for (const layer of config.layers) {
+    for (const name of layer.alwaysAllow) names.add(name);
+    for (const name of layer.alwaysDeny) names.add(name);
+    for (const rule of layer.rules) names.add(rule.command);
+  }
+  return [...names].map((n) => n.trim()).filter((n) => n.length > 0 && !/\s/.test(n)).sort();
+}
+function buildCodexRuleRecords(config) {
+  const records = [];
+  for (const command of collectCandidateCommands(config)) {
+    const result = evaluate(parseCommand(command), config);
+    records.push({
+      command,
+      decision: result.decision,
+      reason: result.reason
+    });
+  }
+  return records;
+}
+function generateCodexRules(config) {
+  const lines = [
+    "# Generated by claude-warden.",
+    "# Regenerate with: pnpm codex:export-rules",
+    ""
+  ];
+  for (const record of buildCodexRuleRecords(config)) {
+    lines.push(
+      `prefix_rule(pattern = [${quote(record.command)}], decision = ${quote(toCodexDecision(record.decision))}, justification = ${quote(`Warden: ${record.reason}`)})`
+    );
+  }
+  lines.push("");
+  return lines.join("\n");
 }
 
 // src/rules.ts
@@ -20113,336 +20164,61 @@ function mergeNonLayerFields(config, raw) {
   }
 }
 
-// src/suggest.ts
-function generateAllowSnippet(details) {
-  const lines = [];
-  const alwaysAllowCmds = [];
-  const ruleCmds = [];
-  for (const d of details) {
-    if (d.decision === "allow") continue;
-    if (d.matchedRule === "alwaysDeny" || d.matchedRule === "default") {
-      if (!alwaysAllowCmds.includes(d.command)) {
-        alwaysAllowCmds.push(d.command);
-      }
-    } else if (d.matchedRule?.endsWith(":default") || d.matchedRule?.endsWith(":argPattern")) {
-      if (!ruleCmds.includes(d.command)) {
-        ruleCmds.push(d.command);
-      }
+// src/codex-export.ts
+function parseArgs(argv) {
+  let cwd = process.cwd();
+  let outPath = null;
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (arg === "--cwd" && argv[i + 1]) {
+      cwd = (0, import_path3.resolve)(argv[i + 1]);
+      i += 1;
+      continue;
     }
-  }
-  if (alwaysAllowCmds.length > 0) {
-    lines.push("alwaysAllow:");
-    for (const cmd of alwaysAllowCmds) {
-      lines.push(`  - "${cmd}"`);
+    if (arg === "--out" && argv[i + 1]) {
+      outPath = argv[i + 1];
+      i += 1;
+      continue;
     }
-  }
-  if (ruleCmds.length > 0) {
-    lines.push("rules:");
-    for (const cmd of ruleCmds) {
-      lines.push(`  - command: "${cmd}"`);
-      lines.push("    default: allow");
+    if (arg === "--stdout") {
+      outPath = "-";
+      continue;
     }
-  }
-  return lines.join("\n");
-}
-function formatSystemMessage(decision, rawCommand, details) {
-  const relevant = details.filter((d) => d.decision !== "allow");
-  if (decision === "ask") {
-    const parts = relevant.map((d) => `\`${d.command}\`: ${d.reason}`);
-    const header = `[warden] ${parts.join(" | ")}`;
-    const subcommandHints = relevant.filter((d) => d.args.length > 0).map((d) => {
-      const sub = d.args[0];
-      return `  Option A: Allow all \`${d.command}\` \u2192 \`/warden:allow ${d.command}\`
-  Option B: Allow only \`${d.command} ${sub}\` \u2192 \`/warden:allow ${d.command} ${sub}\``;
-    });
-    const yoloHint = "Tip: `/warden:yolo` to temporarily allow all commands";
-    if (subcommandHints.length > 0) {
-      return `${header}
-${subcommandHints.join("\n")}
-See /warden:allow
-${yoloHint}`;
-    }
-    return `${header} \u2014 To auto-allow, see /warden:allow
-${yoloHint}`;
-  }
-  const lines = ["[warden] Command blocked", ""];
-  if (relevant.length > 0) {
-    for (const d of relevant) {
-      lines.push(`- \`${d.command}\`: ${d.reason}`);
-    }
-    lines.push("");
-  }
-  const snippet = generateAllowSnippet(details);
-  if (snippet) {
-    lines.push("To allow this in the future, add to your warden config:");
-    lines.push("");
-    lines.push("```yaml");
-    lines.push(snippet);
-    lines.push("```");
-    lines.push("");
-    lines.push("Config locations:");
-    lines.push("- User-level (all projects): `~/.claude/warden.yaml`");
-    lines.push("- Project-level (this project): `.claude/warden.yaml`");
-    lines.push("");
-    lines.push("Project config takes priority over user config.");
-  }
-  return lines.join("\n");
-}
-
-// src/notify.ts
-var import_child_process = require("child_process");
-var TERMINAL_BUNDLE_IDS = {
-  "iTerm.app": "com.googlecode.iterm2",
-  "Apple_Terminal": "com.apple.Terminal",
-  "Alacritty": "com.github.alacritty.Alacritty",
-  "WezTerm": "io.wezfurlong.wezterm"
-};
-var terminalNotifierAvailable = null;
-function hasTerminalNotifier() {
-  if (terminalNotifierAvailable !== null) return terminalNotifierAvailable;
-  try {
-    (0, import_child_process.execFileSync)("which", ["terminal-notifier"], { stdio: "ignore" });
-    terminalNotifierAvailable = true;
-  } catch {
-    terminalNotifierAvailable = false;
-  }
-  return terminalNotifierAvailable;
-}
-function getBundleId() {
-  const termProgram = process.env.TERM_PROGRAM;
-  if (!termProgram) return void 0;
-  return TERMINAL_BUNDLE_IDS[termProgram];
-}
-function buildNotifyCommand(title, message) {
-  const platform = process.platform;
-  if (platform === "darwin") {
-    if (hasTerminalNotifier()) {
-      const args2 = ["-title", title, "-message", message];
-      const bundleId = getBundleId();
-      if (bundleId) {
-        args2.push("-activate", bundleId);
-      }
-      return { cmd: "terminal-notifier", args: args2 };
-    }
-    const script = `display notification ${JSON.stringify(message)} with title ${JSON.stringify(title)}`;
-    return { cmd: "osascript", args: ["-e", script] };
-  }
-  if (platform === "linux") {
-    return { cmd: "notify-send", args: [title, message] };
-  }
-  return null;
-}
-function sendNotification(title, message, config) {
-  try {
-    const notifyCmd = buildNotifyCommand(title, message);
-    if (!notifyCmd) return;
-    const child = (0, import_child_process.spawn)(notifyCmd.cmd, notifyCmd.args, {
-      detached: true,
-      stdio: "ignore"
-    });
-    child.unref();
-  } catch {
-  }
-}
-
-// src/yolo.ts
-var import_fs2 = require("fs");
-var import_os3 = require("os");
-var import_path3 = require("path");
-function yoloFilePath(sessionId) {
-  return (0, import_path3.join)((0, import_os3.tmpdir)(), `claude-warden-yolo-${sessionId}`);
-}
-function getYoloState(sessionId) {
-  const filePath = yoloFilePath(sessionId);
-  if (!(0, import_fs2.existsSync)(filePath)) return null;
-  try {
-    const raw = (0, import_fs2.readFileSync)(filePath, "utf-8");
-    const state = JSON.parse(raw);
-    if (state.expiresAt && new Date(state.expiresAt) <= /* @__PURE__ */ new Date()) {
-      try {
-        (0, import_fs2.unlinkSync)(filePath);
-      } catch {
-      }
-      return null;
-    }
-    return state;
-  } catch {
-    return null;
-  }
-}
-function activateYolo(sessionId, durationMinutes, bypassDeny = false) {
-  const now = /* @__PURE__ */ new Date();
-  const state = {
-    activatedAt: now.toISOString(),
-    expiresAt: durationMinutes ? new Date(now.getTime() + durationMinutes * 6e4).toISOString() : null,
-    bypassDeny
-  };
-  (0, import_fs2.writeFileSync)(yoloFilePath(sessionId), JSON.stringify(state), "utf-8");
-  return state;
-}
-var YOLO_PATTERN = /^echo\s+__WARDEN_YOLO_(ACTIVATE|DEACTIVATE|STATUS)__(?::(\w+))?$/;
-function parseYoloCommand(command) {
-  const match = command.trim().match(YOLO_PATTERN);
-  if (!match) return null;
-  const action = match[1].toLowerCase();
-  const param = match[2] || null;
-  if (action === "activate") {
-    let durationMinutes = null;
-    if (param && param !== "session") {
-      const m = param.match(/^(\d+)m?$/);
-      if (m) {
-        durationMinutes = parseInt(m[1], 10);
-      } else {
-        return null;
-      }
-    }
-    return { action, durationMinutes };
-  }
-  return { action, durationMinutes: null };
-}
-function deactivateYolo(sessionId) {
-  const filePath = yoloFilePath(sessionId);
-  if (!(0, import_fs2.existsSync)(filePath)) return false;
-  try {
-    (0, import_fs2.unlinkSync)(filePath);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-// src/index.ts
-var MAX_STDIN_SIZE = 1024 * 1024;
-async function main() {
-  let raw = "";
-  for await (const chunk of process.stdin) {
-    raw += chunk;
-    if (raw.length > MAX_STDIN_SIZE) {
-      const output2 = {
-        hookSpecificOutput: {
-          hookEventName: "PreToolUse",
-          permissionDecision: "ask",
-          permissionDecisionReason: "[warden] Input exceeds size limit"
-        }
-      };
-      process.stdout.write(JSON.stringify(output2));
+    if (arg === "-h" || arg === "--help") {
+      printHelp();
       process.exit(0);
     }
   }
-  let input;
-  try {
-    input = JSON.parse(raw);
-  } catch {
-    process.exit(0);
+  return { cwd, outPath };
+}
+function printHelp() {
+  process.stdout.write(
+    [
+      "Usage: node dist/codex-export.cjs [--cwd <dir>] [--out <path> | --stdout]",
+      "",
+      "Defaults:",
+      "  --cwd: current directory",
+      "  --out: <cwd>/.codex/rules/warden.rules",
+      ""
+    ].join("\n")
+  );
+}
+function main() {
+  const options = parseArgs(process.argv.slice(2));
+  const config = loadConfig(options.cwd);
+  const rules = generateCodexRules(config);
+  const target = options.outPath ?? (0, import_path3.join)(options.cwd, ".codex", "rules", "warden.rules");
+  if (target === "-") {
+    process.stdout.write(rules);
+    return;
   }
-  if (input.tool_name !== "Bash") {
-    process.exit(0);
-  }
-  if (input.permission_mode === "dangerously-skip-permissions") {
-    process.exit(0);
-  }
-  if (process.env.WARDEN_YOLO === "true" || process.env.WARDEN_YOLO === "1") {
-    process.exit(0);
-  }
-  const command = input.tool_input?.command;
-  if (!command || typeof command !== "string") {
-    process.exit(0);
-  }
-  const yoloCmd = parseYoloCommand(command);
-  if (yoloCmd) {
-    let msg2;
-    if (yoloCmd.action === "activate") {
-      const state = activateYolo(input.session_id, yoloCmd.durationMinutes);
-      const expiryInfo = state.expiresAt ? `expires at ${new Date(state.expiresAt).toLocaleTimeString()}` : "full session, no expiry";
-      msg2 = `[warden] YOLO mode activated (${expiryInfo}). Always-deny commands are still blocked. Use \`echo __WARDEN_YOLO_DEACTIVATE__\` to turn off.`;
-    } else if (yoloCmd.action === "deactivate") {
-      deactivateYolo(input.session_id);
-      msg2 = "[warden] YOLO mode deactivated. Normal rule evaluation resumed.";
-    } else {
-      const state = getYoloState(input.session_id);
-      if (state) {
-        const expiryInfo = state.expiresAt ? `expires at ${new Date(state.expiresAt).toLocaleTimeString()}` : "full session";
-        msg2 = `[warden] YOLO mode is active (${expiryInfo})`;
-      } else {
-        msg2 = "[warden] YOLO mode is not active";
-      }
-    }
-    const output2 = {
-      hookSpecificOutput: {
-        hookEventName: "PreToolUse",
-        permissionDecision: "allow",
-        permissionDecisionReason: msg2
-      }
-    };
-    process.stdout.write(JSON.stringify(output2));
-    process.exit(0);
-  }
-  const config = loadConfig(input.cwd);
-  const yoloState = getYoloState(input.session_id);
-  if (yoloState) {
-    const parsed2 = parseCommand(command);
-    const result2 = evaluate(parsed2, config);
-    if (result2.decision === "deny" && !yoloState.bypassDeny) {
-    } else {
-      const expiryInfo = yoloState.expiresAt ? `expires ${new Date(yoloState.expiresAt).toLocaleTimeString()}` : "full session";
-      const output2 = {
-        hookSpecificOutput: {
-          hookEventName: "PreToolUse",
-          permissionDecision: "allow",
-          permissionDecisionReason: `[warden] YOLO mode active (${expiryInfo})`
-        }
-      };
-      process.stdout.write(JSON.stringify(output2));
-      process.exit(0);
-    }
-  }
-  const parsed = parseCommand(command);
-  const result = evaluate(parsed, config);
-  if (result.decision === "allow") {
-    const output2 = {
-      hookSpecificOutput: {
-        hookEventName: "PreToolUse",
-        permissionDecision: "allow",
-        permissionDecisionReason: `[warden] ${result.reason}`
-      }
-    };
-    process.stdout.write(JSON.stringify(output2));
-    process.exit(0);
-  }
-  if (result.decision === "deny") {
-    if (config.notifyOnDeny) {
-      const truncated = command.length > 80 ? command.slice(0, 77) + "..." : command;
-      sendNotification("Claude Warden", `Blocked: ${truncated}`, config);
-    }
-    const msg2 = formatSystemMessage("deny", command, result.details);
-    const output2 = {
-      hookSpecificOutput: {
-        hookEventName: "PreToolUse",
-        permissionDecision: "deny",
-        permissionDecisionReason: msg2
-      }
-    };
-    process.stdout.write(JSON.stringify(output2));
-    process.stderr.write(`[warden] Blocked: ${result.reason}
+  const resolvedTarget = (0, import_path3.isAbsolute)(target) ? target : (0, import_path3.resolve)(options.cwd, target);
+  (0, import_fs2.mkdirSync)((0, import_path3.dirname)(resolvedTarget), { recursive: true });
+  (0, import_fs2.writeFileSync)(resolvedTarget, rules, "utf-8");
+  process.stderr.write(`[warden] Wrote Codex rules to ${resolvedTarget}
 `);
-    process.exit(2);
-  }
-  if (config.notifyOnAsk) {
-    const truncated = command.length > 80 ? command.slice(0, 77) + "..." : command;
-    sendNotification("Claude Warden", `Permission needed: ${truncated}`, config);
-  }
-  const msg = formatSystemMessage("ask", command, result.details);
-  const output = {
-    hookSpecificOutput: {
-      hookEventName: "PreToolUse",
-      permissionDecision: "ask",
-      permissionDecisionReason: msg
-    }
-  };
-  process.stdout.write(JSON.stringify(output));
-  process.exit(0);
 }
-main().catch(() => process.exit(0));
+main();
 /*! Bundled license information:
 
 is-number/index.js:

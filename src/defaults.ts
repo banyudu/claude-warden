@@ -144,6 +144,9 @@ export const DEFAULT_CONFIG: WardenConfig = {
       'pbcopy', 'pbpaste', 'xclip', 'xsel', 'wl-copy', 'wl-paste',
       // Binary analysis
       'strings', 'nm', 'objdump', 'readelf', 'ldd', 'otool', 'size',
+      // ImageMagick
+      'magick', 'convert', 'identify', 'mogrify', 'composite',
+      'montage', 'compare', 'conjure', 'stream',
       // macOS utilities (read-only)
       'mdfind', 'mdls', 'mdutil', 'plutil', 'sips',
       'xcode-select', 'xcrun', 'xcodebuild',

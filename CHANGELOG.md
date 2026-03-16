@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.3.0] - 2026-03-16
+
+### Features
+- Add ImageMagick commands to default safelist (magick, convert, identify, mogrify, composite, montage, compare, conjure, stream)
+
+### Bug Fixes
+- fix(ci): add npm publish steps to auto-release workflow (829389a)
+
 ## [2.2.0] - 2026-03-15
 
 ### Features
