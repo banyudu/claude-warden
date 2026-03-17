@@ -179,6 +179,9 @@ function mergeNonLayerFields(config: WardenConfig, raw: Record<string, unknown>)
   if (Array.isArray(raw.trustedSprites)) {
     config.trustedSprites = [...(config.trustedSprites || []), ...parseTrustedList(raw.trustedSprites)];
   }
+  if (Array.isArray(raw.trustedFlyApps)) {
+    config.trustedFlyApps = [...(config.trustedFlyApps || []), ...parseTrustedList(raw.trustedFlyApps)];
+  }
   if (typeof raw.defaultDecision === 'string') {
     if (isValidDecision(raw.defaultDecision)) {
       config.defaultDecision = raw.defaultDecision;

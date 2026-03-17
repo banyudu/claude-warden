@@ -61,6 +61,7 @@ export interface WardenConfig {
   trustedDockerContainers?: TrustedTarget[];
   trustedKubectlContexts?: TrustedTarget[];
   trustedSprites?: TrustedTarget[];
+  trustedFlyApps?: TrustedTarget[];
   trustedContextOverrides?: ConfigLayer;
   defaultDecision: Decision;
   askOnSubshell: boolean;

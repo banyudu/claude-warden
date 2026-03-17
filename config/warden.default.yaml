@@ -73,6 +73,16 @@ notifyOnDeny: true
 #     overrides:
 #       alwaysAllow: [sudo, apt]
 
+# Trusted Fly.io apps — fly ssh console to these apps are auto-allowed.
+# Remote commands (-C or after --) are recursively evaluated through warden rules.
+# trustedFlyApps:
+#   - my-fly-app
+#   - name: staging-*
+#     allowAll: true
+#   - name: prod-app
+#     overrides:
+#       alwaysAllow: [sudo, apt]
+
 # Override rules when evaluating commands inside trusted remote contexts
 # (docker exec, kubectl exec, ssh, sprite exec). These overrides are applied
 # as the highest-priority layer only for remote command evaluation.

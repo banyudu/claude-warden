@@ -121,6 +121,10 @@ function evaluateCommand(cmd: ParsedCommand, config: WardenConfig, depth: number
     const spriteResult = evaluateSpriteExec(cmd, config, depth);
     if (spriteResult) return spriteResult;
   }
+  if ((command === 'fly' || command === 'flyctl') && config.trustedFlyApps?.length) {
+    const flyResult = evaluateFlyCommand(cmd, config, depth);
+    if (flyResult) return flyResult;
+  }
   if (command === 'xargs') {
     return evaluateXargsCommand(cmd, config, depth);
   }
@@ -895,5 +899,113 @@ function evaluateSpriteExec(cmd: ParsedCommand, config: WardenConfig, depth: num
     decision: result.decision,
     reason: `Trusted sprite "${spriteName}" (${result.reason})`,
     matchedRule: 'trustedSprites',
+  };
+}
+
+// ─── Fly.io SSH whitelisting ───
+
+/** Fly SSH flags that consume the next argument. */
+const FLY_SSH_FLAGS_WITH_VALUE = new Set([
+  '-a', '--app', '-C', '--command', '-o', '--org', '-r', '--region',
+  '-u', '--user', '--address',
+]);
+
+interface FlySSHParseResult {
+  app: string | null;
+  remoteArgs: string[];
+  isSSH: boolean;
+}
+
+function parseFlySSHArgs(args: string[]): FlySSHParseResult {
+  let app: string | null = null;
+  const remoteArgs: string[] = [];
+  let isSSH = false;
+  let foundConsole = false;
+  let i = 0;
+
+  // Look for `ssh console` subcommand sequence
+  while (i < args.length) {
+    const arg = args[i];
+
+    // Handle --app=value syntax
+    if (arg.startsWith('--app=')) {
+      app = arg.slice(6);
+      i++;
+      continue;
+    }
+
+    if (FLY_SSH_FLAGS_WITH_VALUE.has(arg)) {
+      if (arg === '-a' || arg === '--app') {
+        app = args[i + 1] || null;
+      }
+      if ((arg === '-C' || arg === '--command') && foundConsole) {
+        // Everything after -C is the remote command
+        const cmdValue = args[i + 1];
+        if (cmdValue) {
+          // Parse the command string into args
+          const parsed = parseCommand(cmdValue);
+          if (!parsed.parseError && parsed.commands.length > 0) {
+            const cmd = parsed.commands[0];
+            remoteArgs.push(cmd.command, ...cmd.args);
+          }
+        }
+        i += 2;
+        continue;
+      }
+      i += 2;
+      continue;
+    }
+
+    if (arg === '--') {
+      // Everything after -- is the remote command
+      i++;
+      while (i < args.length) {
+        remoteArgs.push(args[i]);
+        i++;
+      }
+      break;
+    }
+
+    if (arg.startsWith('-')) {
+      i++;
+      continue;
+    }
+
+    // Positional args: look for ssh -> console
+    if (!isSSH && arg === 'ssh') {
+      isSSH = true;
+      i++;
+      continue;
+    }
+
+    if (isSSH && !foundConsole && (arg === 'console' || arg === 'sftp')) {
+      foundConsole = true;
+      i++;
+      continue;
+    }
+
+    i++;
+  }
+
+  return { app, remoteArgs, isSSH: isSSH && foundConsole };
+}
+
+function evaluateFlyCommand(cmd: ParsedCommand, config: WardenConfig, depth: number = 0): CommandEvalDetail | null {
+  const { command, args } = cmd;
+  const { app, remoteArgs, isSSH } = parseFlySSHArgs(args);
+
+  // Only handle ssh console — other fly commands fall through to regular rules
+  if (!isSSH) return null;
+  if (!app) return null;
+
+  const matched = findMatchingTarget(app, config.trustedFlyApps || []);
+  if (!matched) return null;
+
+  const result = evaluateRemoteCommand(remoteArgs, config, matched, depth);
+  return {
+    command, args,
+    decision: result.decision,
+    reason: `Trusted Fly app "${app}" (${result.reason})`,
+    matchedRule: 'trustedFlyApps',
   };
 }
