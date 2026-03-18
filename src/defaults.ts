@@ -96,6 +96,7 @@ export const DEFAULT_CONFIG: WardenConfig = {
   trustedDockerContainers: [],
   trustedKubectlContexts: [],
   trustedSprites: [],
+  trustedFlyApps: [],
 
   layers: [{
     alwaysAllow: [
@@ -470,6 +471,18 @@ export const DEFAULT_CONFIG: WardenConfig = {
         { match: { anyArgMatches: ['^(list|search|show|status|get|template|version|env|history)$'] }, decision: 'allow', description: 'Read-only helm commands' },
         VERSION_HELP_FLAGS,
       ]},
+
+      // --- Fly.io ---
+      ...['fly', 'flyctl'].map((cmd): CommandRule => ({
+        command: cmd,
+        default: 'ask',
+        argPatterns: [
+          { match: { anyArgMatches: ['^(status|logs|info|version|platform|doctor|dig)$'] }, decision: 'allow', description: 'Read-only fly commands' },
+          { match: { argsMatch: ['^apps\\s+list'] }, decision: 'allow', description: 'List fly apps' },
+          { match: { anyArgMatches: ['^(deploy|destroy|scale|secrets)$'] }, decision: 'ask', reason: 'Destructive fly operation' },
+          VERSION_HELP_FLAGS,
+        ],
+      })),
 
       // --- Screen/tmux ---
       ...['screen', 'tmux'].map((cmd): CommandRule => ({

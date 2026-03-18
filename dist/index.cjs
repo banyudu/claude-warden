@@ -18548,6 +18548,10 @@ function evaluateCommand(cmd, config, depth = 0) {
     const spriteResult = evaluateSpriteExec(cmd, config, depth);
     if (spriteResult) return spriteResult;
   }
+  if ((command === "fly" || command === "flyctl") && config.trustedFlyApps?.length) {
+    const flyResult = evaluateFlyCommand(cmd, config, depth);
+    if (flyResult) return flyResult;
+  }
   if (command === "xargs") {
     return evaluateXargsCommand(cmd, config, depth);
   }
@@ -19216,6 +19220,93 @@ function evaluateSpriteExec(cmd, config, depth = 0) {
     matchedRule: "trustedSprites"
   };
 }
+var FLY_SSH_FLAGS_WITH_VALUE = /* @__PURE__ */ new Set([
+  "-a",
+  "--app",
+  "-C",
+  "--command",
+  "-o",
+  "--org",
+  "-r",
+  "--region",
+  "-u",
+  "--user",
+  "--address"
+]);
+function parseFlySSHArgs(args2) {
+  let app = null;
+  const remoteArgs = [];
+  let isSSH = false;
+  let foundConsole = false;
+  let i = 0;
+  while (i < args2.length) {
+    const arg = args2[i];
+    if (arg.startsWith("--app=")) {
+      app = arg.slice(6);
+      i++;
+      continue;
+    }
+    if (FLY_SSH_FLAGS_WITH_VALUE.has(arg)) {
+      if (arg === "-a" || arg === "--app") {
+        app = args2[i + 1] || null;
+      }
+      if ((arg === "-C" || arg === "--command") && foundConsole) {
+        const cmdValue = args2[i + 1];
+        if (cmdValue) {
+          const parsed = parseCommand(cmdValue);
+          if (!parsed.parseError && parsed.commands.length > 0) {
+            const cmd = parsed.commands[0];
+            remoteArgs.push(cmd.command, ...cmd.args);
+          }
+        }
+        i += 2;
+        continue;
+      }
+      i += 2;
+      continue;
+    }
+    if (arg === "--") {
+      i++;
+      while (i < args2.length) {
+        remoteArgs.push(args2[i]);
+        i++;
+      }
+      break;
+    }
+    if (arg.startsWith("-")) {
+      i++;
+      continue;
+    }
+    if (!isSSH && arg === "ssh") {
+      isSSH = true;
+      i++;
+      continue;
+    }
+    if (isSSH && !foundConsole && (arg === "console" || arg === "sftp")) {
+      foundConsole = true;
+      i++;
+      continue;
+    }
+    i++;
+  }
+  return { app, remoteArgs, isSSH: isSSH && foundConsole };
+}
+function evaluateFlyCommand(cmd, config, depth = 0) {
+  const { command, args: args2 } = cmd;
+  const { app, remoteArgs, isSSH } = parseFlySSHArgs(args2);
+  if (!isSSH) return null;
+  if (!app) return null;
+  const matched = findMatchingTarget(app, config.trustedFlyApps || []);
+  if (!matched) return null;
+  const result = evaluateRemoteCommand(remoteArgs, config, matched, depth);
+  return {
+    command,
+    args: args2,
+    decision: result.decision,
+    reason: `Trusted Fly app "${app}" (${result.reason})`,
+    matchedRule: "trustedFlyApps"
+  };
+}
 
 // src/rules.ts
 var import_fs = require("fs");
@@ -19373,6 +19464,7 @@ var DEFAULT_CONFIG = {
   trustedDockerContainers: [],
   trustedKubectlContexts: [],
   trustedSprites: [],
+  trustedFlyApps: [],
   layers: [{
     alwaysAllow: [
       // Read-only file operations
@@ -19895,6 +19987,17 @@ var DEFAULT_CONFIG = {
         { match: { anyArgMatches: ["^(list|search|show|status|get|template|version|env|history)$"] }, decision: "allow", description: "Read-only helm commands" },
         VERSION_HELP_FLAGS
       ] },
+      // --- Fly.io ---
+      ...["fly", "flyctl"].map((cmd) => ({
+        command: cmd,
+        default: "ask",
+        argPatterns: [
+          { match: { anyArgMatches: ["^(status|logs|info|version|platform|doctor|dig)$"] }, decision: "allow", description: "Read-only fly commands" },
+          { match: { argsMatch: ["^apps\\s+list"] }, decision: "allow", description: "List fly apps" },
+          { match: { anyArgMatches: ["^(deploy|destroy|scale|secrets)$"] }, decision: "ask", reason: "Destructive fly operation" },
+          VERSION_HELP_FLAGS
+        ]
+      })),
       // --- Screen/tmux ---
       ...["screen", "tmux"].map((cmd) => ({
         command: cmd,
@@ -20080,6 +20183,9 @@ function mergeNonLayerFields(config, raw) {
   }
   if (Array.isArray(raw.trustedSprites)) {
     config.trustedSprites = [...config.trustedSprites || [], ...parseTrustedList(raw.trustedSprites)];
+  }
+  if (Array.isArray(raw.trustedFlyApps)) {
+    config.trustedFlyApps = [...config.trustedFlyApps || [], ...parseTrustedList(raw.trustedFlyApps)];
   }
   if (typeof raw.defaultDecision === "string") {
     if (isValidDecision(raw.defaultDecision)) {

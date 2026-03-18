@@ -1021,4 +1021,70 @@ describe('evaluator', () => {
       expect(result.decision).toBe('deny');
     });
   });
+
+  describe('fly / flyctl trusted apps', () => {
+    const apps = ['my-app', 'staging-*'];
+
+    it('allows fly ssh console with safe command on trusted app', () => {
+      expect(evalWith('fly ssh console -a my-app -C "ls -la"', { trustedFlyApps: toTargets(apps) }).decision).toBe('allow');
+    });
+
+    it('allows fly ssh console interactive (no command)', () => {
+      expect(evalWith('fly ssh console -a my-app', { trustedFlyApps: toTargets(apps) }).decision).toBe('allow');
+    });
+
+    it('allows --app=value syntax', () => {
+      expect(evalWith('fly ssh console --app=my-app -C "ls -la"', { trustedFlyApps: toTargets(apps) }).decision).toBe('allow');
+    });
+
+    it('denies fly ssh console with dangerous command on trusted app', () => {
+      expect(evalWith('fly ssh console -a my-app -C "sudo rm -rf /"', { trustedFlyApps: toTargets(apps) }).decision).toBe('deny');
+    });
+
+    it('asks for untrusted app', () => {
+      expect(evalWith('fly ssh console -a unknown-app -C "ls"', { trustedFlyApps: toTargets(apps) }).decision).toBe('ask');
+    });
+
+    it('supports glob matching', () => {
+      expect(evalWith('fly ssh console -a staging-web -C "ls"', { trustedFlyApps: toTargets(apps) }).decision).toBe('allow');
+    });
+
+    it('evaluates shell -c commands recursively', () => {
+      expect(evalWith('fly ssh console -a my-app -C "bash -c \\"ls | grep foo\\""', { trustedFlyApps: toTargets(apps) }).decision).toBe('allow');
+    });
+
+    it('flyctl alias works same as fly', () => {
+      expect(evalWith('flyctl ssh console -a my-app -C "ls"', { trustedFlyApps: toTargets(apps) }).decision).toBe('allow');
+    });
+
+    it('allowAll on trusted app allows everything', () => {
+      expect(evalWith('fly ssh console -a my-app -C "sudo rm -rf /"', {
+        trustedFlyApps: [{ name: 'my-app', allowAll: true }],
+      }).decision).toBe('allow');
+    });
+
+    it('per-app overrides work', () => {
+      expect(evalWith('fly ssh console -a my-app -C "sudo apt install vim"', {
+        trustedFlyApps: [{ name: 'my-app', overrides: { alwaysAllow: ['sudo', 'apt'], alwaysDeny: [], rules: [] } }],
+      }).decision).toBe('allow');
+    });
+
+    it('non-ssh fly commands fall through to regular rules', () => {
+      const result = evalWith('fly status', { trustedFlyApps: toTargets(apps) });
+      expect(result.decision).toBe('allow');
+    });
+
+    it('fly deploy still asks', () => {
+      const result = evalWith('fly deploy', { trustedFlyApps: toTargets(apps) });
+      expect(result.decision).toBe('ask');
+    });
+
+    it('allows -- syntax for remote command', () => {
+      expect(evalWith('fly ssh console -a my-app -- ls -la', { trustedFlyApps: toTargets(apps) }).decision).toBe('allow');
+    });
+
+    it('allows bare bash on trusted app (interactive shell)', () => {
+      expect(evalWith('fly ssh console -a my-app -C "bash"', { trustedFlyApps: toTargets(apps) }).decision).toBe('allow');
+    });
+  });
 });
