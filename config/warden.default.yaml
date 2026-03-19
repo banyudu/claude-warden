@@ -30,58 +30,100 @@ notifyOnDeny: true
 #   - nc
 #   - ncat
 
-# Trusted SSH hosts — ssh/scp/rsync to these hosts are auto-allowed.
-# Remote commands on trusted hosts are recursively evaluated through warden rules.
-# Supports glob patterns (* wildcards).
-# Entries can be strings (use global overrides) or objects with per-target settings.
-# trustedSSHHosts:
-#   - devserver                          # string → uses global overrides only
-#   - staging-*
-#   - "*.internal.company.com"
-#   - name: prod-bastion                 # object with per-target overrides
+# Remote execution contexts — SSH, Docker, kubectl, Sprite, Fly.io
+# Commands on trusted remotes are recursively evaluated through warden rules.
+# Supports glob patterns (* wildcards) for names.
+# trustedRemotes:
+#   - context: ssh
+#     name: devserver
+#   - context: ssh
+#     name: staging-*
+#   - context: ssh
+#     name: "*.internal.company.com"
+#   - context: ssh
+#     name: prod-bastion
 #     overrides:
 #       alwaysAllow: [systemctl]
-
-# Trusted Docker containers — docker exec to these containers are auto-allowed.
-# Remote commands are recursively evaluated through warden rules.
-# trustedDockerContainers:
-#   - my-app                             # string → uses global overrides only
-#   - name: dev-container                # object with allowAll (skip all checks)
-#     allowAll: true
-#   - name: staging-*                    # object with per-target overrides
+#   - context: docker
+#     name: my-app
+#   - context: docker
+#     name: dev-container
+#     allowAll: true                 # skip all checks (disposable env)
+#   - context: docker
+#     name: staging-*
 #     overrides:
 #       alwaysAllow: [sudo, apt]
-
-# Trusted kubectl contexts — kubectl exec in these contexts are auto-allowed.
-# Remote commands (after --) are recursively evaluated through warden rules.
-# trustedKubectlContexts:
-#   - minikube
-#   - name: dev-cluster-*
+#   - context: kubectl
+#     name: minikube
+#   - context: kubectl
+#     name: dev-cluster-*
 #     overrides:
 #       alwaysAllow: [sudo]
-#   - name: prod-cluster
+#   - context: kubectl
+#     name: prod-cluster
 #     overrides:
 #       alwaysDeny: [rm]
-
-# Trusted Sprites — sprite exec/console to these sprites are auto-allowed.
-# Remote commands are recursively evaluated through warden rules.
-# trustedSprites:
-#   - my-sprite                          # string → uses global overrides only
-#   - name: yudu-claw                    # allowAll: skip all checks (disposable env)
+#   - context: sprite
+#     name: my-sprite
+#   - context: sprite
+#     name: yudu-claw
 #     allowAll: true
-#   - name: dev-*                        # per-target overrides
+#   - context: sprite
+#     name: dev-*
+#     overrides:
+#       alwaysAllow: [sudo, apt]
+#   - context: fly
+#     name: my-fly-app
+#   - context: fly
+#     name: staging-*
+#     allowAll: true
+#   - context: fly
+#     name: prod-app
 #     overrides:
 #       alwaysAllow: [sudo, apt]
 
-# Trusted Fly.io apps — fly ssh console to these apps are auto-allowed.
-# Remote commands (-C or after --) are recursively evaluated through warden rules.
-# trustedFlyApps:
-#   - my-fly-app
-#   - name: staging-*
-#     allowAll: true
-#   - name: prod-app
-#     overrides:
-#       alwaysAllow: [sudo, apt]
+# Target-based policies — override decisions based on paths, databases, or endpoints.
+# targetPolicies:
+#   - type: path
+#     path: /tmp
+#     allowAll: true                 # any command targeting /tmp is auto-allowed
+#   - type: path
+#     path: "{{cwd}}"               # expands to the project's working directory
+#     decision: allow
+#     commands: [rm, cp, mv]        # only override these commands
+#   - type: path
+#     path: /etc
+#     decision: deny                # block modifications to /etc
+#     reason: "System config directory"
+#   - type: path
+#     path: /opt/build
+#     recursive: false              # exact match only (not children)
+#     decision: allow
+#   - type: database
+#     host: localhost
+#     decision: allow
+#   - type: database
+#     host: "dev-*.internal"
+#     database: "test_*"
+#     decision: allow
+#   - type: database
+#     host: "prod.example.com"
+#     decision: deny
+#     reason: "Production database"
+#   - type: endpoint
+#     pattern: "http://localhost:*"
+#     decision: allow
+#   - type: endpoint
+#     pattern: "https://api.dev.example.com/*"
+#     decision: allow
+#   - type: endpoint
+#     pattern: "https://api.prod.example.com/*"
+#     decision: deny
+#     reason: "Production API"
+
+# Legacy keys (trustedSSHHosts, trustedDockerContainers, trustedKubectlContexts,
+# trustedSprites, trustedFlyApps, trustedPaths, trustedDatabases, trustedEndpoints)
+# are still supported and automatically converted to the unified form above.
 
 # Override rules when evaluating commands inside trusted remote contexts
 # (docker exec, kubectl exec, ssh, sprite exec). These overrides are applied

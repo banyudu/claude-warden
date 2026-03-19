@@ -93,7 +93,7 @@ async function main() {
   const yoloState = getYoloState(input.session_id);
   if (yoloState) {
     const parsed = parseCommand(command);
-    const result = evaluate(parsed, config);
+    const result = evaluate(parsed, config, input.cwd);
 
     // In YOLO mode, only block alwaysDeny commands (unless bypassDeny is set)
     if (result.decision === 'deny' && !yoloState.bypassDeny) {
