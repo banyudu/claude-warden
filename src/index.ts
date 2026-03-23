@@ -115,7 +115,7 @@ async function main() {
   }
 
   const parsed = parseCommand(command);
-  const result = evaluate(parsed, config);
+  const result = evaluate(parsed, config, input.cwd);
 
   if (result.decision === 'allow') {
     const output: HookOutput = {
