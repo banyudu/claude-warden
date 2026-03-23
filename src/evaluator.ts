@@ -4,6 +4,8 @@ import type {
   CommandEvalDetail, ParsedCommand, CommandRule, TrustedTarget,
 } from './types';
 import { parseCommand } from './parser';
+import { evaluateTargetPolicies } from './targets';
+import { globToRegex } from './glob';
 
 /** Safely test a regex pattern, returning false on invalid patterns. */
 function safeRegexTest(pattern: string, input: string): boolean {
@@ -32,7 +34,14 @@ function commandMatchesName(cmd: ParsedCommand, name: string): boolean {
 
 const MAX_RECURSION_DEPTH = 10;
 
-export function evaluate(parsed: ParseResult, config: WardenConfig, depth: number = 0): EvalResult {
+export function evaluate(parsed: ParseResult, config: WardenConfig, cwd?: string, depth?: number): EvalResult;
+/** @deprecated Use the 4-arg form with cwd */
+export function evaluate(parsed: ParseResult, config: WardenConfig, depth?: number): EvalResult;
+export function evaluate(parsed: ParseResult, config: WardenConfig, cwdOrDepth?: string | number, maybeDepth?: number): EvalResult {
+  // Disambiguate overloads: string → cwd, number → depth
+  const cwd = typeof cwdOrDepth === 'string' ? cwdOrDepth : undefined;
+  const depth = typeof cwdOrDepth === 'number' ? cwdOrDepth : (maybeDepth ?? 0);
+
   if (depth > MAX_RECURSION_DEPTH) {
     return { decision: 'ask', reason: 'Maximum recursion depth exceeded', details: [] };
   }
@@ -49,7 +58,7 @@ export function evaluate(parsed: ParseResult, config: WardenConfig, depth: numbe
   if (parsed.hasSubshell && parsed.subshellCommands.length > 0) {
     for (const subCmd of parsed.subshellCommands) {
       const subParsed = parseCommand(subCmd);
-      const subResult = evaluate(subParsed, config, depth + 1);
+      const subResult = evaluate(subParsed, config, cwd, depth + 1);
       if (subResult.decision === 'deny') {
         return { decision: 'deny', reason: `Subshell command: ${subResult.reason}`, details: subResult.details };
       }
@@ -64,7 +73,7 @@ export function evaluate(parsed: ParseResult, config: WardenConfig, depth: numbe
 
   const details: CommandEvalDetail[] = [];
   for (const cmd of parsed.commands) {
-    details.push(evaluateCommand(cmd, config, depth));
+    details.push(evaluateCommand(cmd, config, cwd, depth));
   }
 
   // Combine: deny > ask > allow
@@ -91,7 +100,7 @@ export function evaluate(parsed: ParseResult, config: WardenConfig, depth: numbe
   return { decision: 'allow', reason: 'All commands are safe', details };
 }
 
-function evaluateCommand(cmd: ParsedCommand, config: WardenConfig, depth: number = 0): CommandEvalDetail {
+function evaluateCommand(cmd: ParsedCommand, config: WardenConfig, cwd?: string, depth: number = 0): CommandEvalDetail {
   const { command, args } = cmd;
 
   // 1. Scoped alwaysDeny → alwaysAllow per layer (workspace > user > default)
@@ -104,32 +113,55 @@ function evaluateCommand(cmd: ParsedCommand, config: WardenConfig, depth: number
     }
   }
 
-  // 2. Remote target whitelisting with recursive command evaluation
-  if ((command === 'ssh' || command === 'scp' || command === 'rsync') && config.trustedSSHHosts?.length) {
-    const sshResult = evaluateSSHCommand(cmd, config, depth);
-    if (sshResult) return sshResult;
+  // 2. Target-based policy overrides (paths, databases, endpoints)
+  if (cwd) {
+    const targetResult = evaluateTargetPolicies(cmd, cwd, config);
+    if (targetResult) return targetResult;
   }
-  if (command === 'docker' && config.trustedDockerContainers?.length) {
-    const dockerResult = evaluateDockerExec(cmd, config, depth);
-    if (dockerResult) return dockerResult;
+
+  // 3. Remote target whitelisting with recursive command evaluation
+  const remotes = config.trustedRemotes || [];
+
+  if (command === 'ssh' || command === 'scp' || command === 'rsync') {
+    const sshTargets = remotes.filter(r => r.context === 'ssh');
+    if (sshTargets.length) {
+      const sshResult = evaluateSSHCommand(cmd, config, sshTargets, depth);
+      if (sshResult) return sshResult;
+    }
   }
-  if (command === 'kubectl' && config.trustedKubectlContexts?.length) {
-    const kubectlResult = evaluateKubectlExec(cmd, config, depth);
-    if (kubectlResult) return kubectlResult;
+  if (command === 'docker') {
+    const dockerTargets = remotes.filter(r => r.context === 'docker');
+    if (dockerTargets.length) {
+      const dockerResult = evaluateDockerExec(cmd, config, dockerTargets, depth);
+      if (dockerResult) return dockerResult;
+    }
   }
-  if (command === 'sprite' && config.trustedSprites?.length) {
-    const spriteResult = evaluateSpriteExec(cmd, config, depth);
-    if (spriteResult) return spriteResult;
+  if (command === 'kubectl') {
+    const kubectlTargets = remotes.filter(r => r.context === 'kubectl');
+    if (kubectlTargets.length) {
+      const kubectlResult = evaluateKubectlExec(cmd, config, kubectlTargets, depth);
+      if (kubectlResult) return kubectlResult;
+    }
   }
-  if ((command === 'fly' || command === 'flyctl') && config.trustedFlyApps?.length) {
-    const flyResult = evaluateFlyCommand(cmd, config, depth);
-    if (flyResult) return flyResult;
+  if (command === 'sprite') {
+    const spriteTargets = remotes.filter(r => r.context === 'sprite');
+    if (spriteTargets.length) {
+      const spriteResult = evaluateSpriteExec(cmd, config, spriteTargets, depth);
+      if (spriteResult) return spriteResult;
+    }
+  }
+  if (command === 'fly' || command === 'flyctl') {
+    const flyTargets = remotes.filter(r => r.context === 'fly');
+    if (flyTargets.length) {
+      const flyResult = evaluateFlyCommand(cmd, config, flyTargets, depth);
+      if (flyResult) return flyResult;
+    }
   }
   if (command === 'xargs') {
-    return evaluateXargsCommand(cmd, config, depth);
+    return evaluateXargsCommand(cmd, config, cwd, depth);
   }
   if (command === 'find') {
-    return evaluateFindCommand(cmd, config, depth);
+    return evaluateFindCommand(cmd, config, cwd, depth);
   }
 
   // 3. Scoped command rules — collect and merge across layers
@@ -325,7 +357,7 @@ function parseXargsSubcommand(args: string[]): { subcommand: ParsedCommand | nul
   };
 }
 
-function evaluateXargsCommand(cmd: ParsedCommand, config: WardenConfig, depth: number = 0): CommandEvalDetail {
+function evaluateXargsCommand(cmd: ParsedCommand, config: WardenConfig, cwd?: string, depth: number = 0): CommandEvalDetail {
   const { command, args } = cmd;
   const { subcommand, unresolved } = parseXargsSubcommand(args);
 
@@ -357,7 +389,7 @@ function evaluateXargsCommand(cmd: ParsedCommand, config: WardenConfig, depth: n
     parsed = { commands: [subcommand], hasSubshell: false, subshellCommands: [], parseError: false };
   }
 
-  const result = evaluate(parsed, config, depth + 1);
+  const result = evaluate(parsed, config, cwd, depth + 1);
 
   return {
     command,
@@ -402,7 +434,7 @@ function parseFindExecCommands(args: string[]): ParsedCommand[] {
   return commands;
 }
 
-function evaluateFindCommand(cmd: ParsedCommand, config: WardenConfig, depth: number = 0): CommandEvalDetail {
+function evaluateFindCommand(cmd: ParsedCommand, config: WardenConfig, cwd?: string, depth: number = 0): CommandEvalDetail {
   const { command, args } = cmd;
 
   // -delete, -ok, -okdir are inherently dangerous
@@ -427,7 +459,7 @@ function evaluateFindCommand(cmd: ParsedCommand, config: WardenConfig, depth: nu
       subshellCommands: [],
       parseError: false,
     };
-    const result = evaluate(parsed, config, depth + 1);
+    const result = evaluate(parsed, config, cwd, depth + 1);
     if (result.decision === 'deny') {
       return { command, args, decision: 'deny', reason: `find -exec: ${result.reason}`, matchedRule: 'find:exec' };
     }
@@ -444,53 +476,6 @@ const SSH_FLAGS_WITH_VALUE = new Set([
   '-b', '-c', '-D', '-E', '-e', '-F', '-I', '-i', '-J', '-L',
   '-l', '-m', '-O', '-o', '-p', '-Q', '-R', '-S', '-W', '-w',
 ]);
-
-/** Convert a glob pattern to a RegExp. Supports *, ?, [...], and {a,b,c}. */
-function globToRegex(pattern: string): RegExp {
-  let regex = '';
-  let i = 0;
-  while (i < pattern.length) {
-    const ch = pattern[i];
-    if (ch === '*') {
-      regex += '.*';
-    } else if (ch === '?') {
-      regex += '.';
-    } else if (ch === '[') {
-      // Pass through character class until closing ]
-      i++;
-      // Handle negation [!...] → [^...]
-      if (i < pattern.length && pattern[i] === '!') {
-        regex += '[^';
-        i++;
-      } else {
-        regex += '[';
-      }
-      while (i < pattern.length && pattern[i] !== ']') {
-        regex += pattern[i];
-        i++;
-      }
-      if (i < pattern.length) {
-        regex += ']';
-      }
-    } else if (ch === '{') {
-      // Brace expansion {a,b,c} → (a|b|c)
-      const end = pattern.indexOf('}', i);
-      if (end !== -1) {
-        const alternatives = pattern.slice(i + 1, end).split(',').map(s => s.replace(/[.+^$|\\()]/g, '\\$&'));
-        regex += `(${alternatives.join('|')})`;
-        i = end;
-      } else {
-        regex += '\\{';
-      }
-    } else if ('.+^$|\\()'.includes(ch)) {
-      regex += '\\' + ch;
-    } else {
-      regex += ch;
-    }
-    i++;
-  }
-  return new RegExp(`^${regex}$`);
-}
 
 function matchesPattern(value: string, targets: TrustedTarget[]): boolean {
   return targets.some(t => globToRegex(t.name).test(value));
@@ -549,14 +534,13 @@ function extractHostFromRemotePath(args: string[]): string | null {
   return null;
 }
 
-function evaluateSSHCommand(cmd: ParsedCommand, config: WardenConfig, depth: number = 0): CommandEvalDetail | null {
+function evaluateSSHCommand(cmd: ParsedCommand, config: WardenConfig, targets: TrustedTarget[], depth: number = 0): CommandEvalDetail | null {
   const { command, args } = cmd;
-  const trustedHosts = config.trustedSSHHosts || [];
 
   if (command === 'scp' || command === 'rsync') {
     const host = extractHostFromRemotePath(args);
     if (!host) return null;
-    const target = findMatchingTarget(host, trustedHosts);
+    const target = findMatchingTarget(host, targets);
     if (!target) return null;
     if (target.allowAll || !target.overrides) {
       return {
@@ -585,7 +569,7 @@ function evaluateSSHCommand(cmd: ParsedCommand, config: WardenConfig, depth: num
   // ssh
   const { host, remoteCommand } = parseSSHArgs(args);
   if (!host) return null;
-  const target = findMatchingTarget(host, trustedHosts);
+  const target = findMatchingTarget(host, targets);
   if (!target) return null;
 
   // Trusted host, no remote command
@@ -728,13 +712,13 @@ function parseDockerExecArgs(args: string[]): ExecParseResult {
   return { target, remoteArgs };
 }
 
-function evaluateDockerExec(cmd: ParsedCommand, config: WardenConfig, depth: number = 0): CommandEvalDetail | null {
+function evaluateDockerExec(cmd: ParsedCommand, config: WardenConfig, targets: TrustedTarget[], depth: number = 0): CommandEvalDetail | null {
   const { command, args } = cmd;
   if (args[0] !== 'exec') return null;
 
   const { target: containerName, remoteArgs } = parseDockerExecArgs(args.slice(1));
   if (!containerName) return null;
-  const matched = findMatchingTarget(containerName, config.trustedDockerContainers || []);
+  const matched = findMatchingTarget(containerName, targets);
   if (!matched) return null;
 
   const result = evaluateRemoteCommand(remoteArgs, config, matched, depth);
@@ -803,13 +787,13 @@ function parseKubectlExecArgs(args: string[]): { context: string | null; pod: st
   return { context, pod, remoteArgs };
 }
 
-function evaluateKubectlExec(cmd: ParsedCommand, config: WardenConfig, depth: number = 0): CommandEvalDetail | null {
+function evaluateKubectlExec(cmd: ParsedCommand, config: WardenConfig, targets: TrustedTarget[], depth: number = 0): CommandEvalDetail | null {
   const { command, args } = cmd;
   if (args[0] !== 'exec') return null;
 
   const { context, pod, remoteArgs } = parseKubectlExecArgs(args.slice(1));
   if (!context) return null;
-  const matched = findMatchingTarget(context, config.trustedKubectlContexts || []);
+  const matched = findMatchingTarget(context, targets);
   if (!matched) return null;
 
   const result = evaluateRemoteCommand(remoteArgs, config, matched, depth);
@@ -886,11 +870,11 @@ function parseSpriteExecArgs(args: string[]): { spriteName: string | null; remot
   return { spriteName, remoteArgs };
 }
 
-function evaluateSpriteExec(cmd: ParsedCommand, config: WardenConfig, depth: number = 0): CommandEvalDetail | null {
+function evaluateSpriteExec(cmd: ParsedCommand, config: WardenConfig, targets: TrustedTarget[], depth: number = 0): CommandEvalDetail | null {
   const { command, args } = cmd;
   const { spriteName, remoteArgs } = parseSpriteExecArgs(args);
   if (!spriteName) return null;
-  const matched = findMatchingTarget(spriteName, config.trustedSprites || []);
+  const matched = findMatchingTarget(spriteName, targets);
   if (!matched) return null;
 
   const result = evaluateRemoteCommand(remoteArgs, config, matched, depth);
@@ -990,7 +974,7 @@ function parseFlySSHArgs(args: string[]): FlySSHParseResult {
   return { app, remoteArgs, isSSH: isSSH && foundConsole };
 }
 
-function evaluateFlyCommand(cmd: ParsedCommand, config: WardenConfig, depth: number = 0): CommandEvalDetail | null {
+function evaluateFlyCommand(cmd: ParsedCommand, config: WardenConfig, targets: TrustedTarget[], depth: number = 0): CommandEvalDetail | null {
   const { command, args } = cmd;
   const { app, remoteArgs, isSSH } = parseFlySSHArgs(args);
 
@@ -998,7 +982,7 @@ function evaluateFlyCommand(cmd: ParsedCommand, config: WardenConfig, depth: num
   if (!isSSH) return null;
   if (!app) return null;
 
-  const matched = findMatchingTarget(app, config.trustedFlyApps || []);
+  const matched = findMatchingTarget(app, targets);
   if (!matched) return null;
 
   const result = evaluateRemoteCommand(remoteArgs, config, matched, depth);

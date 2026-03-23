@@ -55,13 +55,45 @@ export interface TrustedTarget {
   overrides?: ConfigLayer;
 }
 
+// Remote contexts — extends TrustedTarget with a discriminator
+export type RemoteContext = 'ssh' | 'docker' | 'kubectl' | 'sprite' | 'fly';
+
+export interface TrustedRemote extends TrustedTarget {
+  context: RemoteContext;
+}
+
+// Data targets — discriminated union
+export type TargetPolicy = PathPolicy | DatabasePolicy | EndpointPolicy;
+
+interface TargetPolicyBase {
+  commands?: string[];
+  decision: Decision;
+  reason?: string;
+  allowAll?: boolean;
+}
+
+export interface PathPolicy extends TargetPolicyBase {
+  type: 'path';
+  path: string;
+  recursive?: boolean;
+}
+
+export interface DatabasePolicy extends TargetPolicyBase {
+  type: 'database';
+  host: string;
+  port?: number;
+  database?: string;
+}
+
+export interface EndpointPolicy extends TargetPolicyBase {
+  type: 'endpoint';
+  pattern: string;
+}
+
 export interface WardenConfig {
   layers: ConfigLayer[];
-  trustedSSHHosts?: TrustedTarget[];
-  trustedDockerContainers?: TrustedTarget[];
-  trustedKubectlContexts?: TrustedTarget[];
-  trustedSprites?: TrustedTarget[];
-  trustedFlyApps?: TrustedTarget[];
+  trustedRemotes?: TrustedRemote[];
+  targetPolicies?: TargetPolicy[];
   trustedContextOverrides?: ConfigLayer;
   defaultDecision: Decision;
   askOnSubshell: boolean;

@@ -18456,6 +18456,284 @@ function regexFallbackParse(input) {
 
 // src/evaluator.ts
 var import_os = require("os");
+
+// src/targets.ts
+var import_path2 = require("path");
+
+// src/glob.ts
+function globToRegex(pattern) {
+  let regex = "";
+  let i = 0;
+  while (i < pattern.length) {
+    const ch = pattern[i];
+    if (ch === "*") {
+      regex += ".*";
+    } else if (ch === "?") {
+      regex += ".";
+    } else if (ch === "[") {
+      i++;
+      if (i < pattern.length && pattern[i] === "!") {
+        regex += "[^";
+        i++;
+      } else {
+        regex += "[";
+      }
+      while (i < pattern.length && pattern[i] !== "]") {
+        regex += pattern[i];
+        i++;
+      }
+      if (i < pattern.length) regex += "]";
+    } else if (ch === "{") {
+      const end = pattern.indexOf("}", i);
+      if (end !== -1) {
+        const alternatives = pattern.slice(i + 1, end).split(",").map((s) => s.replace(/[.+^$|\\()]/g, "\\$&"));
+        regex += `(${alternatives.join("|")})`;
+        i = end;
+      } else {
+        regex += "\\{";
+      }
+    } else if (".+^$|\\()".includes(ch)) {
+      regex += "\\" + ch;
+    } else {
+      regex += ch;
+    }
+    i++;
+  }
+  return new RegExp(`^${regex}$`);
+}
+
+// src/targets.ts
+var PATH_COMMANDS = /* @__PURE__ */ new Set([
+  "rm",
+  "chmod",
+  "chown",
+  "cp",
+  "mv",
+  "tee",
+  "mkdir",
+  "rmdir",
+  "touch",
+  "ln"
+]);
+function evaluatePathTarget(cmd, cwd, targets) {
+  if (targets.length === 0) return null;
+  const positionalArgs = cmd.args.filter((a) => !a.startsWith("-"));
+  if (positionalArgs.length === 0) return null;
+  let bestMatch = null;
+  for (const target of targets) {
+    if (target.allowAll) {
+    } else {
+      if (target.commands && target.commands.length > 0 && !target.commands.includes(cmd.command)) {
+        continue;
+      }
+      if (!target.commands && !PATH_COMMANDS.has(cmd.command)) {
+        continue;
+      }
+    }
+    const targetPath = (0, import_path2.normalize)(target.path.replace(/\{\{cwd\}\}/g, cwd));
+    const recursive = target.recursive !== false;
+    for (const arg of positionalArgs) {
+      const resolvedArg = (0, import_path2.normalize)((0, import_path2.resolve)(cwd, arg));
+      const matches = recursive ? resolvedArg === targetPath || resolvedArg.startsWith(targetPath + "/") : resolvedArg === targetPath;
+      if (matches) {
+        const decision = target.allowAll ? "allow" : target.decision;
+        const detail = {
+          command: cmd.command,
+          args: cmd.args,
+          decision,
+          reason: target.reason || `Path "${resolvedArg}" matches trusted path "${target.path}" (${decision})`,
+          matchedRule: "trustedPaths"
+        };
+        if (decision === "deny") return detail;
+        if (!bestMatch || bestMatch.decision !== "deny") {
+          bestMatch = detail;
+        }
+      }
+    }
+  }
+  return bestMatch;
+}
+var DB_HOST_FLAGS = {
+  psql: ["-h", "--host"],
+  mysql: ["-h", "--host"],
+  mariadb: ["-h", "--host"],
+  "redis-cli": ["-h"],
+  mongosh: ["--host"]
+};
+var DB_DATABASE_FLAGS = {
+  psql: ["-d", "--dbname"],
+  mysql: ["-D", "--database"],
+  mariadb: ["-D", "--database"]
+};
+var DB_PORT_FLAGS = {
+  psql: ["-p", "--port"],
+  mysql: ["-P", "--port"],
+  mariadb: ["-P", "--port"],
+  "redis-cli": ["-p"],
+  mongosh: ["--port"]
+};
+function extractFlagValue(args2, flags) {
+  for (let i = 0; i < args2.length; i++) {
+    const arg = args2[i];
+    for (const f of flags) {
+      if (arg.startsWith(f + "=")) {
+        return arg.slice(f.length + 1);
+      }
+    }
+    if (flags.includes(arg) && i + 1 < args2.length) {
+      return args2[i + 1];
+    }
+  }
+  return void 0;
+}
+function parseDBConnection(cmd) {
+  const command = cmd.command;
+  const info = {};
+  for (const arg of cmd.args) {
+    if (arg.startsWith("postgresql://") || arg.startsWith("postgres://")) {
+      try {
+        const url = new URL(arg);
+        info.host = url.hostname;
+        if (url.port) info.port = parseInt(url.port, 10);
+        if (url.pathname.length > 1) info.database = url.pathname.slice(1);
+        return info;
+      } catch {
+      }
+    }
+    if (arg.startsWith("mongodb://") || arg.startsWith("mongodb+srv://")) {
+      try {
+        const url = new URL(arg);
+        info.host = url.hostname;
+        if (url.port) info.port = parseInt(url.port, 10);
+        if (url.pathname.length > 1) info.database = url.pathname.slice(1);
+        return info;
+      } catch {
+      }
+    }
+  }
+  const hostFlags = DB_HOST_FLAGS[command];
+  if (hostFlags) {
+    const h = extractFlagValue(cmd.args, hostFlags);
+    if (h) info.host = h;
+  }
+  const dbFlags = DB_DATABASE_FLAGS[command];
+  if (dbFlags) {
+    const d = extractFlagValue(cmd.args, dbFlags);
+    if (d) info.database = d;
+  }
+  const portFlags = DB_PORT_FLAGS[command];
+  if (portFlags) {
+    const p = extractFlagValue(cmd.args, portFlags);
+    if (p) info.port = parseInt(p, 10);
+  }
+  return info;
+}
+var DB_COMMANDS = new Set(Object.keys(DB_HOST_FLAGS));
+function evaluateDatabaseTarget(cmd, targets) {
+  if (targets.length === 0) return null;
+  const hasAllowAll = targets.some((t) => t.allowAll);
+  if (!hasAllowAll && !DB_COMMANDS.has(cmd.command)) return null;
+  const applicableTargets = targets.filter((t) => t.allowAll || DB_COMMANDS.has(cmd.command));
+  if (applicableTargets.length === 0) return null;
+  const conn = parseDBConnection(cmd);
+  if (!conn.host) return null;
+  let bestMatch = null;
+  for (const target of applicableTargets) {
+    if (!target.allowAll && target.commands && target.commands.length > 0 && !target.commands.includes(cmd.command)) {
+      continue;
+    }
+    const hostMatch = globToRegex(target.host).test(conn.host);
+    if (!hostMatch) continue;
+    if (target.port !== void 0 && conn.port !== void 0 && target.port !== conn.port) {
+      continue;
+    }
+    if (target.database) {
+      if (!conn.database || !globToRegex(target.database).test(conn.database)) continue;
+    }
+    const decision = target.allowAll ? "allow" : target.decision;
+    const detail = {
+      command: cmd.command,
+      args: cmd.args,
+      decision,
+      reason: target.reason || `Database "${conn.host}${conn.database ? "/" + conn.database : ""}" matches trusted database (${decision})`,
+      matchedRule: "trustedDatabases"
+    };
+    if (decision === "deny") return detail;
+    if (!bestMatch) bestMatch = detail;
+  }
+  return bestMatch;
+}
+var ENDPOINT_COMMANDS = /* @__PURE__ */ new Set(["curl", "wget", "http", "httpie"]);
+function extractURLs(cmd) {
+  const urls = [];
+  const args2 = cmd.args;
+  for (let i = 0; i < args2.length; i++) {
+    const arg = args2[i];
+    if (arg === "--url" && i + 1 < args2.length) {
+      urls.push(args2[i + 1]);
+      i++;
+      continue;
+    }
+    if (arg.startsWith("http://") || arg.startsWith("https://")) {
+      urls.push(arg);
+    }
+  }
+  return urls;
+}
+function evaluateEndpointTarget(cmd, targets) {
+  if (targets.length === 0) return null;
+  const hasAllowAll = targets.some((t) => t.allowAll);
+  if (!hasAllowAll && !ENDPOINT_COMMANDS.has(cmd.command)) return null;
+  const urls = extractURLs(cmd);
+  if (urls.length === 0) return null;
+  let bestMatch = null;
+  for (const target of targets) {
+    if (!target.allowAll && target.commands && target.commands.length > 0 && !target.commands.includes(cmd.command)) {
+      continue;
+    }
+    for (const url of urls) {
+      if (globToRegex(target.pattern).test(url)) {
+        const decision = target.allowAll ? "allow" : target.decision;
+        const detail = {
+          command: cmd.command,
+          args: cmd.args,
+          decision,
+          reason: target.reason || `URL "${url}" matches trusted endpoint "${target.pattern}" (${decision})`,
+          matchedRule: "trustedEndpoints"
+        };
+        if (decision === "deny") return detail;
+        if (!bestMatch) bestMatch = detail;
+      }
+    }
+  }
+  return bestMatch;
+}
+function evaluateTargetPolicies(cmd, cwd, config) {
+  const policies = config.targetPolicies;
+  if (!policies?.length) return null;
+  const results = [];
+  const pathPolicies = policies.filter((p) => p.type === "path");
+  if (pathPolicies.length) {
+    const r = evaluatePathTarget(cmd, cwd, pathPolicies);
+    if (r) results.push(r);
+  }
+  const dbPolicies = policies.filter((p) => p.type === "database");
+  if (dbPolicies.length) {
+    const r = evaluateDatabaseTarget(cmd, dbPolicies);
+    if (r) results.push(r);
+  }
+  const endpointPolicies = policies.filter((p) => p.type === "endpoint");
+  if (endpointPolicies.length) {
+    const r = evaluateEndpointTarget(cmd, endpointPolicies);
+    if (r) results.push(r);
+  }
+  if (results.length === 0) return null;
+  const deny = results.find((r) => r.decision === "deny");
+  if (deny) return deny;
+  return results[0];
+}
+
+// src/evaluator.ts
 function safeRegexTest(pattern, input) {
   try {
     return new RegExp(pattern).test(input);
@@ -18475,7 +18753,9 @@ function commandMatchesName(cmd, name) {
   return cmd.command === name;
 }
 var MAX_RECURSION_DEPTH = 10;
-function evaluate(parsed, config, depth = 0) {
+function evaluate(parsed, config, cwdOrDepth, maybeDepth) {
+  const cwd = typeof cwdOrDepth === "string" ? cwdOrDepth : void 0;
+  const depth = typeof cwdOrDepth === "number" ? cwdOrDepth : maybeDepth ?? 0;
   if (depth > MAX_RECURSION_DEPTH) {
     return { decision: "ask", reason: "Maximum recursion depth exceeded", details: [] };
   }
@@ -18488,7 +18768,7 @@ function evaluate(parsed, config, depth = 0) {
   if (parsed.hasSubshell && parsed.subshellCommands.length > 0) {
     for (const subCmd of parsed.subshellCommands) {
       const subParsed = parseCommand(subCmd);
-      const subResult = evaluate(subParsed, config, depth + 1);
+      const subResult = evaluate(subParsed, config, cwd, depth + 1);
       if (subResult.decision === "deny") {
         return { decision: "deny", reason: `Subshell command: ${subResult.reason}`, details: subResult.details };
       }
@@ -18501,7 +18781,7 @@ function evaluate(parsed, config, depth = 0) {
   }
   const details = [];
   for (const cmd of parsed.commands) {
-    details.push(evaluateCommand(cmd, config, depth));
+    details.push(evaluateCommand(cmd, config, cwd, depth));
   }
   const decisions = details.map((d) => d.decision);
   if (decisions.includes("deny")) {
@@ -18522,7 +18802,7 @@ function evaluate(parsed, config, depth = 0) {
   }
   return { decision: "allow", reason: "All commands are safe", details };
 }
-function evaluateCommand(cmd, config, depth = 0) {
+function evaluateCommand(cmd, config, cwd, depth = 0) {
   const { command, args: args2 } = cmd;
   for (const layer of config.layers) {
     if (layer.alwaysDeny.some((name) => commandMatchesName(cmd, name))) {
@@ -18532,31 +18812,51 @@ function evaluateCommand(cmd, config, depth = 0) {
       return { command, args: args2, decision: "allow", reason: `"${command}" is safe`, matchedRule: "alwaysAllow" };
     }
   }
-  if ((command === "ssh" || command === "scp" || command === "rsync") && config.trustedSSHHosts?.length) {
-    const sshResult = evaluateSSHCommand(cmd, config, depth);
-    if (sshResult) return sshResult;
+  if (cwd) {
+    const targetResult = evaluateTargetPolicies(cmd, cwd, config);
+    if (targetResult) return targetResult;
   }
-  if (command === "docker" && config.trustedDockerContainers?.length) {
-    const dockerResult = evaluateDockerExec(cmd, config, depth);
-    if (dockerResult) return dockerResult;
+  const remotes = config.trustedRemotes || [];
+  if (command === "ssh" || command === "scp" || command === "rsync") {
+    const sshTargets = remotes.filter((r) => r.context === "ssh");
+    if (sshTargets.length) {
+      const sshResult = evaluateSSHCommand(cmd, config, sshTargets, depth);
+      if (sshResult) return sshResult;
+    }
   }
-  if (command === "kubectl" && config.trustedKubectlContexts?.length) {
-    const kubectlResult = evaluateKubectlExec(cmd, config, depth);
-    if (kubectlResult) return kubectlResult;
+  if (command === "docker") {
+    const dockerTargets = remotes.filter((r) => r.context === "docker");
+    if (dockerTargets.length) {
+      const dockerResult = evaluateDockerExec(cmd, config, dockerTargets, depth);
+      if (dockerResult) return dockerResult;
+    }
   }
-  if (command === "sprite" && config.trustedSprites?.length) {
-    const spriteResult = evaluateSpriteExec(cmd, config, depth);
-    if (spriteResult) return spriteResult;
+  if (command === "kubectl") {
+    const kubectlTargets = remotes.filter((r) => r.context === "kubectl");
+    if (kubectlTargets.length) {
+      const kubectlResult = evaluateKubectlExec(cmd, config, kubectlTargets, depth);
+      if (kubectlResult) return kubectlResult;
+    }
   }
-  if ((command === "fly" || command === "flyctl") && config.trustedFlyApps?.length) {
-    const flyResult = evaluateFlyCommand(cmd, config, depth);
-    if (flyResult) return flyResult;
+  if (command === "sprite") {
+    const spriteTargets = remotes.filter((r) => r.context === "sprite");
+    if (spriteTargets.length) {
+      const spriteResult = evaluateSpriteExec(cmd, config, spriteTargets, depth);
+      if (spriteResult) return spriteResult;
+    }
+  }
+  if (command === "fly" || command === "flyctl") {
+    const flyTargets = remotes.filter((r) => r.context === "fly");
+    if (flyTargets.length) {
+      const flyResult = evaluateFlyCommand(cmd, config, flyTargets, depth);
+      if (flyResult) return flyResult;
+    }
   }
   if (command === "xargs") {
-    return evaluateXargsCommand(cmd, config, depth);
+    return evaluateXargsCommand(cmd, config, cwd, depth);
   }
   if (command === "find") {
-    return evaluateFindCommand(cmd, config, depth);
+    return evaluateFindCommand(cmd, config, cwd, depth);
   }
   const mergedRule = collectMergedRule(cmd, config);
   if (mergedRule) {
@@ -18718,7 +19018,7 @@ function parseXargsSubcommand(args2) {
     }
   };
 }
-function evaluateXargsCommand(cmd, config, depth = 0) {
+function evaluateXargsCommand(cmd, config, cwd, depth = 0) {
   const { command, args: args2 } = cmd;
   const { subcommand, unresolved } = parseXargsSubcommand(args2);
   if (unresolved || !subcommand) {
@@ -18742,7 +19042,7 @@ function evaluateXargsCommand(cmd, config, depth = 0) {
   } else {
     parsed = { commands: [subcommand], hasSubshell: false, subshellCommands: [], parseError: false };
   }
-  const result = evaluate(parsed, config, depth + 1);
+  const result = evaluate(parsed, config, cwd, depth + 1);
   return {
     command,
     args: args2,
@@ -18780,7 +19080,7 @@ function parseFindExecCommands(args2) {
   }
   return commands;
 }
-function evaluateFindCommand(cmd, config, depth = 0) {
+function evaluateFindCommand(cmd, config, cwd, depth = 0) {
   const { command, args: args2 } = cmd;
   if (args2.some((a) => a === "-delete")) {
     return { command, args: args2, decision: "ask", reason: "find -delete can remove files", matchedRule: "find:delete" };
@@ -18799,7 +19099,7 @@ function evaluateFindCommand(cmd, config, depth = 0) {
       subshellCommands: [],
       parseError: false
     };
-    const result = evaluate(parsed, config, depth + 1);
+    const result = evaluate(parsed, config, cwd, depth + 1);
     if (result.decision === "deny") {
       return { command, args: args2, decision: "deny", reason: `find -exec: ${result.reason}`, matchedRule: "find:exec" };
     }
@@ -18831,48 +19131,6 @@ var SSH_FLAGS_WITH_VALUE = /* @__PURE__ */ new Set([
   "-W",
   "-w"
 ]);
-function globToRegex(pattern) {
-  let regex = "";
-  let i = 0;
-  while (i < pattern.length) {
-    const ch = pattern[i];
-    if (ch === "*") {
-      regex += ".*";
-    } else if (ch === "?") {
-      regex += ".";
-    } else if (ch === "[") {
-      i++;
-      if (i < pattern.length && pattern[i] === "!") {
-        regex += "[^";
-        i++;
-      } else {
-        regex += "[";
-      }
-      while (i < pattern.length && pattern[i] !== "]") {
-        regex += pattern[i];
-        i++;
-      }
-      if (i < pattern.length) {
-        regex += "]";
-      }
-    } else if (ch === "{") {
-      const end = pattern.indexOf("}", i);
-      if (end !== -1) {
-        const alternatives = pattern.slice(i + 1, end).split(",").map((s) => s.replace(/[.+^$|\\()]/g, "\\$&"));
-        regex += `(${alternatives.join("|")})`;
-        i = end;
-      } else {
-        regex += "\\{";
-      }
-    } else if (".+^$|\\()".includes(ch)) {
-      regex += "\\" + ch;
-    } else {
-      regex += ch;
-    }
-    i++;
-  }
-  return new RegExp(`^${regex}$`);
-}
 function findMatchingTarget(value, targets) {
   return targets.find((t) => globToRegex(t.name).test(value)) || null;
 }
@@ -18913,13 +19171,12 @@ function extractHostFromRemotePath(args2) {
   }
   return null;
 }
-function evaluateSSHCommand(cmd, config, depth = 0) {
+function evaluateSSHCommand(cmd, config, targets, depth = 0) {
   const { command, args: args2 } = cmd;
-  const trustedHosts = config.trustedSSHHosts || [];
   if (command === "scp" || command === "rsync") {
     const host2 = extractHostFromRemotePath(args2);
     if (!host2) return null;
-    const target2 = findMatchingTarget(host2, trustedHosts);
+    const target2 = findMatchingTarget(host2, targets);
     if (!target2) return null;
     if (target2.allowAll || !target2.overrides) {
       return {
@@ -18949,7 +19206,7 @@ function evaluateSSHCommand(cmd, config, depth = 0) {
   }
   const { host, remoteCommand } = parseSSHArgs(args2);
   if (!host) return null;
-  const target = findMatchingTarget(host, trustedHosts);
+  const target = findMatchingTarget(host, targets);
   if (!target) return null;
   if (!remoteCommand) {
     return {
@@ -19058,12 +19315,12 @@ function parseDockerExecArgs(args2) {
   }
   return { target, remoteArgs };
 }
-function evaluateDockerExec(cmd, config, depth = 0) {
+function evaluateDockerExec(cmd, config, targets, depth = 0) {
   const { command, args: args2 } = cmd;
   if (args2[0] !== "exec") return null;
   const { target: containerName, remoteArgs } = parseDockerExecArgs(args2.slice(1));
   if (!containerName) return null;
-  const matched = findMatchingTarget(containerName, config.trustedDockerContainers || []);
+  const matched = findMatchingTarget(containerName, targets);
   if (!matched) return null;
   const result = evaluateRemoteCommand(remoteArgs, config, matched, depth);
   return {
@@ -19138,12 +19395,12 @@ function parseKubectlExecArgs(args2) {
   }
   return { context, pod, remoteArgs };
 }
-function evaluateKubectlExec(cmd, config, depth = 0) {
+function evaluateKubectlExec(cmd, config, targets, depth = 0) {
   const { command, args: args2 } = cmd;
   if (args2[0] !== "exec") return null;
   const { context, pod, remoteArgs } = parseKubectlExecArgs(args2.slice(1));
   if (!context) return null;
-  const matched = findMatchingTarget(context, config.trustedKubectlContexts || []);
+  const matched = findMatchingTarget(context, targets);
   if (!matched) return null;
   const result = evaluateRemoteCommand(remoteArgs, config, matched, depth);
   return {
@@ -19205,11 +19462,11 @@ function parseSpriteExecArgs(args2) {
   }
   return { spriteName, remoteArgs };
 }
-function evaluateSpriteExec(cmd, config, depth = 0) {
+function evaluateSpriteExec(cmd, config, targets, depth = 0) {
   const { command, args: args2 } = cmd;
   const { spriteName, remoteArgs } = parseSpriteExecArgs(args2);
   if (!spriteName) return null;
-  const matched = findMatchingTarget(spriteName, config.trustedSprites || []);
+  const matched = findMatchingTarget(spriteName, targets);
   if (!matched) return null;
   const result = evaluateRemoteCommand(remoteArgs, config, matched, depth);
   return {
@@ -19291,12 +19548,12 @@ function parseFlySSHArgs(args2) {
   }
   return { app, remoteArgs, isSSH: isSSH && foundConsole };
 }
-function evaluateFlyCommand(cmd, config, depth = 0) {
+function evaluateFlyCommand(cmd, config, targets, depth = 0) {
   const { command, args: args2 } = cmd;
   const { app, remoteArgs, isSSH } = parseFlySSHArgs(args2);
   if (!isSSH) return null;
   if (!app) return null;
-  const matched = findMatchingTarget(app, config.trustedFlyApps || []);
+  const matched = findMatchingTarget(app, targets);
   if (!matched) return null;
   const result = evaluateRemoteCommand(remoteArgs, config, matched, depth);
   return {
@@ -19312,7 +19569,7 @@ function evaluateFlyCommand(cmd, config, depth = 0) {
 var import_fs = require("fs");
 var import_yaml = __toESM(require_dist2(), 1);
 var import_os2 = require("os");
-var import_path2 = require("path");
+var import_path3 = require("path");
 
 // src/defaults.ts
 var SAFE_DEV_TOOLS = [
@@ -19460,11 +19717,8 @@ var DEFAULT_CONFIG = {
   askOnSubshell: true,
   notifyOnAsk: true,
   notifyOnDeny: true,
-  trustedSSHHosts: [],
-  trustedDockerContainers: [],
-  trustedKubectlContexts: [],
-  trustedSprites: [],
-  trustedFlyApps: [],
+  trustedRemotes: [],
+  targetPolicies: [],
   layers: [{
     alwaysAllow: [
       // Read-only file operations
@@ -20045,8 +20299,8 @@ function isValidDecision(value) {
   return VALID_DECISIONS.has(value);
 }
 var USER_CONFIG_PATHS = [
-  (0, import_path2.join)((0, import_os2.homedir)(), ".claude", "warden.yaml"),
-  (0, import_path2.join)((0, import_os2.homedir)(), ".claude", "warden.json")
+  (0, import_path3.join)((0, import_os2.homedir)(), ".claude", "warden.yaml"),
+  (0, import_path3.join)((0, import_os2.homedir)(), ".claude", "warden.json")
 ];
 var PROJECT_CONFIG_NAMES = [
   ".claude/warden.yaml",
@@ -20069,7 +20323,7 @@ function loadConfig(cwd) {
   let workspaceRaw = null;
   if (cwd) {
     for (const name of PROJECT_CONFIG_NAMES) {
-      const result = tryLoadFile((0, import_path2.join)(cwd, name));
+      const result = tryLoadFile((0, import_path3.join)(cwd, name));
       if (result) {
         workspaceLayer = extractLayer(result);
         workspaceRaw = result;
@@ -20171,21 +20425,153 @@ function parseTrustedList(raw) {
     return null;
   }).filter((t) => t !== null);
 }
+var VALID_REMOTE_CONTEXTS = /* @__PURE__ */ new Set(["ssh", "docker", "kubectl", "sprite", "fly"]);
+function parseTrustedRemotes(raw) {
+  const results = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
+    const obj = entry;
+    const context = String(obj.context || "");
+    if (!VALID_REMOTE_CONTEXTS.has(context)) {
+      process.stderr.write(`[warden] Warning: unknown remote context "${context}", skipping
+`);
+      continue;
+    }
+    const name = String(obj.name || "");
+    if (!name) continue;
+    const remote = { name, context };
+    if (obj.allowAll === true) remote.allowAll = true;
+    if (obj.overrides && typeof obj.overrides === "object") {
+      remote.overrides = extractLayer(obj.overrides);
+    }
+    results.push(remote);
+  }
+  return results;
+}
+function parseTargetPolicies(raw) {
+  const results = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
+    const obj = entry;
+    const type = String(obj.type || "");
+    const rawDecision = String(obj.decision || "allow");
+    const decision = isValidDecision(rawDecision) ? rawDecision : "allow";
+    const base = {
+      commands: Array.isArray(obj.commands) ? obj.commands.map(String) : void 0,
+      decision,
+      reason: obj.reason ? String(obj.reason) : void 0,
+      allowAll: obj.allowAll === true ? true : void 0
+    };
+    switch (type) {
+      case "path": {
+        const path = String(obj.path || "");
+        if (!path) continue;
+        const policy = { ...base, type: "path", path };
+        if (obj.recursive === false) policy.recursive = false;
+        results.push(policy);
+        break;
+      }
+      case "database": {
+        const host = String(obj.host || "");
+        if (!host) continue;
+        const policy = { ...base, type: "database", host };
+        if (typeof obj.port === "number") policy.port = obj.port;
+        if (obj.database) policy.database = String(obj.database);
+        results.push(policy);
+        break;
+      }
+      case "endpoint": {
+        const pattern = String(obj.pattern || "");
+        if (!pattern) continue;
+        results.push({ ...base, type: "endpoint", pattern });
+        break;
+      }
+      default:
+        process.stderr.write(`[warden] Warning: unknown target policy type "${type}", skipping
+`);
+    }
+  }
+  return results;
+}
+function parseLegacyPaths(raw) {
+  const results = [];
+  for (const e of raw) {
+    if (!e || typeof e !== "object") continue;
+    const obj = e;
+    const decision = String(obj.decision || "allow");
+    if (!isValidDecision(decision)) continue;
+    const path = String(obj.path || "");
+    if (!path) continue;
+    const tp = { type: "path", path, decision };
+    if (obj.recursive === false) tp.recursive = false;
+    if (Array.isArray(obj.commands)) tp.commands = obj.commands.map(String);
+    if (obj.reason) tp.reason = String(obj.reason);
+    results.push(tp);
+  }
+  return results;
+}
+function parseLegacyDatabases(raw) {
+  const results = [];
+  for (const e of raw) {
+    if (!e || typeof e !== "object") continue;
+    const obj = e;
+    const decision = String(obj.decision || "allow");
+    if (!isValidDecision(decision)) continue;
+    const host = String(obj.host || "");
+    if (!host) continue;
+    const td = { type: "database", host, decision };
+    if (typeof obj.port === "number") td.port = obj.port;
+    if (obj.database) td.database = String(obj.database);
+    if (Array.isArray(obj.commands)) td.commands = obj.commands.map(String);
+    if (obj.reason) td.reason = String(obj.reason);
+    results.push(td);
+  }
+  return results;
+}
+function parseLegacyEndpoints(raw) {
+  const results = [];
+  for (const e of raw) {
+    if (!e || typeof e !== "object") continue;
+    const obj = e;
+    const decision = String(obj.decision || "allow");
+    if (!isValidDecision(decision)) continue;
+    const pattern = String(obj.pattern || "");
+    if (!pattern) continue;
+    const te = { type: "endpoint", pattern, decision };
+    if (Array.isArray(obj.commands)) te.commands = obj.commands.map(String);
+    if (obj.reason) te.reason = String(obj.reason);
+    results.push(te);
+  }
+  return results;
+}
+var LEGACY_REMOTE_MAP = {
+  trustedSSHHosts: "ssh",
+  trustedDockerContainers: "docker",
+  trustedKubectlContexts: "kubectl",
+  trustedSprites: "sprite",
+  trustedFlyApps: "fly"
+};
 function mergeNonLayerFields(config, raw) {
-  if (Array.isArray(raw.trustedSSHHosts)) {
-    config.trustedSSHHosts = [...config.trustedSSHHosts || [], ...parseTrustedList(raw.trustedSSHHosts)];
+  if (Array.isArray(raw.trustedRemotes)) {
+    config.trustedRemotes = [...config.trustedRemotes || [], ...parseTrustedRemotes(raw.trustedRemotes)];
   }
-  if (Array.isArray(raw.trustedDockerContainers)) {
-    config.trustedDockerContainers = [...config.trustedDockerContainers || [], ...parseTrustedList(raw.trustedDockerContainers)];
+  if (Array.isArray(raw.targetPolicies)) {
+    config.targetPolicies = [...config.targetPolicies || [], ...parseTargetPolicies(raw.targetPolicies)];
   }
-  if (Array.isArray(raw.trustedKubectlContexts)) {
-    config.trustedKubectlContexts = [...config.trustedKubectlContexts || [], ...parseTrustedList(raw.trustedKubectlContexts)];
+  for (const [key, context] of Object.entries(LEGACY_REMOTE_MAP)) {
+    if (Array.isArray(raw[key])) {
+      const remotes = parseTrustedList(raw[key]).map((t) => ({ ...t, context }));
+      config.trustedRemotes = [...config.trustedRemotes || [], ...remotes];
+    }
   }
-  if (Array.isArray(raw.trustedSprites)) {
-    config.trustedSprites = [...config.trustedSprites || [], ...parseTrustedList(raw.trustedSprites)];
+  if (Array.isArray(raw.trustedPaths)) {
+    config.targetPolicies = [...config.targetPolicies || [], ...parseLegacyPaths(raw.trustedPaths)];
   }
-  if (Array.isArray(raw.trustedFlyApps)) {
-    config.trustedFlyApps = [...config.trustedFlyApps || [], ...parseTrustedList(raw.trustedFlyApps)];
+  if (Array.isArray(raw.trustedDatabases)) {
+    config.targetPolicies = [...config.targetPolicies || [], ...parseLegacyDatabases(raw.trustedDatabases)];
+  }
+  if (Array.isArray(raw.trustedEndpoints)) {
+    config.targetPolicies = [...config.targetPolicies || [], ...parseLegacyEndpoints(raw.trustedEndpoints)];
   }
   if (typeof raw.defaultDecision === "string") {
     if (isValidDecision(raw.defaultDecision)) {
@@ -20354,9 +20740,9 @@ function sendNotification(title, message, config) {
 // src/yolo.ts
 var import_fs2 = require("fs");
 var import_os3 = require("os");
-var import_path3 = require("path");
+var import_path4 = require("path");
 function yoloFilePath(sessionId) {
-  return (0, import_path3.join)((0, import_os3.tmpdir)(), `claude-warden-yolo-${sessionId}`);
+  return (0, import_path4.join)((0, import_os3.tmpdir)(), `claude-warden-yolo-${sessionId}`);
 }
 function getYoloState(sessionId) {
   const filePath = yoloFilePath(sessionId);
@@ -20487,7 +20873,7 @@ async function main() {
   const yoloState = getYoloState(input.session_id);
   if (yoloState) {
     const parsed2 = parseCommand(command);
-    const result2 = evaluate(parsed2, config);
+    const result2 = evaluate(parsed2, config, input.cwd);
     if (result2.decision === "deny" && !yoloState.bypassDeny) {
     } else {
       const expiryInfo = yoloState.expiresAt ? `expires ${new Date(yoloState.expiresAt).toLocaleTimeString()}` : "full session";

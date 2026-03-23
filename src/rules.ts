@@ -2,7 +2,10 @@ import { readFileSync, existsSync } from 'fs';
 import { parse as parseYaml } from 'yaml';
 import { homedir } from 'os';
 import { join } from 'path';
-import type { WardenConfig, ConfigLayer, CommandRule, TrustedTarget } from './types';
+import type {
+  WardenConfig, ConfigLayer, CommandRule, TrustedTarget,
+  TrustedRemote, RemoteContext, TargetPolicy, PathPolicy, DatabasePolicy, EndpointPolicy,
+} from './types';
 import { DEFAULT_CONFIG } from './defaults';
 
 const VALID_DECISIONS = new Set(['allow', 'deny', 'ask']);
@@ -166,22 +169,171 @@ export function parseTrustedList(raw: unknown[]): TrustedTarget[] {
   }).filter((t): t is TrustedTarget => t !== null);
 }
 
+const VALID_REMOTE_CONTEXTS = new Set<RemoteContext>(['ssh', 'docker', 'kubectl', 'sprite', 'fly']);
+
+function parseTrustedRemotes(raw: unknown[]): TrustedRemote[] {
+  const results: TrustedRemote[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object') continue;
+    const obj = entry as Record<string, unknown>;
+    const context = String(obj.context || '');
+    if (!VALID_REMOTE_CONTEXTS.has(context as RemoteContext)) {
+      process.stderr.write(`[warden] Warning: unknown remote context "${context}", skipping\n`);
+      continue;
+    }
+    const name = String(obj.name || '');
+    if (!name) continue;
+    const remote: TrustedRemote = { name, context: context as RemoteContext };
+    if (obj.allowAll === true) remote.allowAll = true;
+    if (obj.overrides && typeof obj.overrides === 'object') {
+      remote.overrides = extractLayer(obj.overrides as Record<string, unknown>);
+    }
+    results.push(remote);
+  }
+  return results;
+}
+
+function parseTargetPolicies(raw: unknown[]): TargetPolicy[] {
+  const results: TargetPolicy[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object') continue;
+    const obj = entry as Record<string, unknown>;
+    const type = String(obj.type || '');
+
+    const rawDecision = String(obj.decision || 'allow');
+    const decision: 'allow' | 'deny' | 'ask' = isValidDecision(rawDecision) ? rawDecision as 'allow' | 'deny' | 'ask' : 'allow';
+
+    const base = {
+      commands: Array.isArray(obj.commands) ? obj.commands.map(String) : undefined,
+      decision,
+      reason: obj.reason ? String(obj.reason) : undefined,
+      allowAll: obj.allowAll === true ? true : undefined,
+    };
+
+    switch (type) {
+      case 'path': {
+        const path = String(obj.path || '');
+        if (!path) continue;
+        const policy: PathPolicy = { ...base, type: 'path', path };
+        if (obj.recursive === false) policy.recursive = false;
+        results.push(policy);
+        break;
+      }
+      case 'database': {
+        const host = String(obj.host || '');
+        if (!host) continue;
+        const policy: DatabasePolicy = { ...base, type: 'database', host };
+        if (typeof obj.port === 'number') policy.port = obj.port;
+        if (obj.database) policy.database = String(obj.database);
+        results.push(policy);
+        break;
+      }
+      case 'endpoint': {
+        const pattern = String(obj.pattern || '');
+        if (!pattern) continue;
+        results.push({ ...base, type: 'endpoint', pattern });
+        break;
+      }
+      default:
+        process.stderr.write(`[warden] Warning: unknown target policy type "${type}", skipping\n`);
+    }
+  }
+  return results;
+}
+
+// Legacy parsers — convert old format to unified TargetPolicy types
+
+function parseLegacyPaths(raw: unknown[]): PathPolicy[] {
+  const results: PathPolicy[] = [];
+  for (const e of raw) {
+    if (!e || typeof e !== 'object') continue;
+    const obj = e as Record<string, unknown>;
+    const decision = String(obj.decision || 'allow');
+    if (!isValidDecision(decision)) continue;
+    const path = String(obj.path || '');
+    if (!path) continue;
+    const tp: PathPolicy = { type: 'path', path, decision: decision as PathPolicy['decision'] };
+    if (obj.recursive === false) tp.recursive = false;
+    if (Array.isArray(obj.commands)) tp.commands = obj.commands.map(String);
+    if (obj.reason) tp.reason = String(obj.reason);
+    results.push(tp);
+  }
+  return results;
+}
+
+function parseLegacyDatabases(raw: unknown[]): DatabasePolicy[] {
+  const results: DatabasePolicy[] = [];
+  for (const e of raw) {
+    if (!e || typeof e !== 'object') continue;
+    const obj = e as Record<string, unknown>;
+    const decision = String(obj.decision || 'allow');
+    if (!isValidDecision(decision)) continue;
+    const host = String(obj.host || '');
+    if (!host) continue;
+    const td: DatabasePolicy = { type: 'database', host, decision: decision as DatabasePolicy['decision'] };
+    if (typeof obj.port === 'number') td.port = obj.port;
+    if (obj.database) td.database = String(obj.database);
+    if (Array.isArray(obj.commands)) td.commands = obj.commands.map(String);
+    if (obj.reason) td.reason = String(obj.reason);
+    results.push(td);
+  }
+  return results;
+}
+
+function parseLegacyEndpoints(raw: unknown[]): EndpointPolicy[] {
+  const results: EndpointPolicy[] = [];
+  for (const e of raw) {
+    if (!e || typeof e !== 'object') continue;
+    const obj = e as Record<string, unknown>;
+    const decision = String(obj.decision || 'allow');
+    if (!isValidDecision(decision)) continue;
+    const pattern = String(obj.pattern || '');
+    if (!pattern) continue;
+    const te: EndpointPolicy = { type: 'endpoint', pattern, decision: decision as EndpointPolicy['decision'] };
+    if (Array.isArray(obj.commands)) te.commands = obj.commands.map(String);
+    if (obj.reason) te.reason = String(obj.reason);
+    results.push(te);
+  }
+  return results;
+}
+
+// Legacy remote context key → RemoteContext mapping
+const LEGACY_REMOTE_MAP: Record<string, RemoteContext> = {
+  trustedSSHHosts: 'ssh',
+  trustedDockerContainers: 'docker',
+  trustedKubectlContexts: 'kubectl',
+  trustedSprites: 'sprite',
+  trustedFlyApps: 'fly',
+};
+
 function mergeNonLayerFields(config: WardenConfig, raw: Record<string, unknown>): void {
-  if (Array.isArray(raw.trustedSSHHosts)) {
-    config.trustedSSHHosts = [...(config.trustedSSHHosts || []), ...parseTrustedList(raw.trustedSSHHosts)];
+  // Unified keys (processed first)
+  if (Array.isArray(raw.trustedRemotes)) {
+    config.trustedRemotes = [...(config.trustedRemotes || []), ...parseTrustedRemotes(raw.trustedRemotes)];
   }
-  if (Array.isArray(raw.trustedDockerContainers)) {
-    config.trustedDockerContainers = [...(config.trustedDockerContainers || []), ...parseTrustedList(raw.trustedDockerContainers)];
+  if (Array.isArray(raw.targetPolicies)) {
+    config.targetPolicies = [...(config.targetPolicies || []), ...parseTargetPolicies(raw.targetPolicies)];
   }
-  if (Array.isArray(raw.trustedKubectlContexts)) {
-    config.trustedKubectlContexts = [...(config.trustedKubectlContexts || []), ...parseTrustedList(raw.trustedKubectlContexts)];
+
+  // Legacy remote context aliases → append to trustedRemotes
+  for (const [key, context] of Object.entries(LEGACY_REMOTE_MAP)) {
+    if (Array.isArray(raw[key])) {
+      const remotes = parseTrustedList(raw[key] as unknown[]).map(t => ({ ...t, context }));
+      config.trustedRemotes = [...(config.trustedRemotes || []), ...remotes];
+    }
   }
-  if (Array.isArray(raw.trustedSprites)) {
-    config.trustedSprites = [...(config.trustedSprites || []), ...parseTrustedList(raw.trustedSprites)];
+
+  // Legacy data target aliases → append to targetPolicies
+  if (Array.isArray(raw.trustedPaths)) {
+    config.targetPolicies = [...(config.targetPolicies || []), ...parseLegacyPaths(raw.trustedPaths)];
   }
-  if (Array.isArray(raw.trustedFlyApps)) {
-    config.trustedFlyApps = [...(config.trustedFlyApps || []), ...parseTrustedList(raw.trustedFlyApps)];
+  if (Array.isArray(raw.trustedDatabases)) {
+    config.targetPolicies = [...(config.targetPolicies || []), ...parseLegacyDatabases(raw.trustedDatabases)];
   }
+  if (Array.isArray(raw.trustedEndpoints)) {
+    config.targetPolicies = [...(config.targetPolicies || []), ...parseLegacyEndpoints(raw.trustedEndpoints)];
+  }
+
   if (typeof raw.defaultDecision === 'string') {
     if (isValidDecision(raw.defaultDecision)) {
       config.defaultDecision = raw.defaultDecision;

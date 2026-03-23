@@ -92,11 +92,8 @@ export const DEFAULT_CONFIG: WardenConfig = {
   askOnSubshell: true,
   notifyOnAsk: true,
   notifyOnDeny: true,
-  trustedSSHHosts: [],
-  trustedDockerContainers: [],
-  trustedKubectlContexts: [],
-  trustedSprites: [],
-  trustedFlyApps: [],
+  trustedRemotes: [],
+  targetPolicies: [],
 
   layers: [{
     alwaysAllow: [

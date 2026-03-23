@@ -2,10 +2,14 @@ import { describe, it, expect } from 'vitest';
 import { parseCommand } from '../parser';
 import { evaluate } from '../evaluator';
 import { DEFAULT_CONFIG } from '../defaults';
-import type { WardenConfig, TrustedTarget } from '../types';
+import type { WardenConfig, TrustedTarget, TrustedRemote, RemoteContext } from '../types';
 
 function toTargets(items: (string | TrustedTarget)[]): TrustedTarget[] {
   return items.map(i => typeof i === 'string' ? { name: i } : i);
+}
+
+function toRemotes(items: (string | TrustedTarget)[], context: RemoteContext): TrustedRemote[] {
+  return toTargets(items).map(t => ({ ...t, context }));
 }
 
 /** Simulate the full pipeline: parse → evaluate with default config */
@@ -20,7 +24,7 @@ function wardenWith(command: string, overrides: Partial<WardenConfig>) {
 }
 
 function wardenWithSSH(command: string, trustedHosts: (string | TrustedTarget)[]) {
-  return wardenWith(command, { trustedSSHHosts: toTargets(trustedHosts) });
+  return wardenWith(command, { trustedRemotes: toRemotes(trustedHosts, 'ssh') });
 }
 
 describe('integration: realistic commands', () => {
@@ -340,23 +344,23 @@ describe('integration: realistic commands', () => {
     const containers = ['my-app', 'dev-*'];
 
     it('docker exec my-app cat /etc/hosts → allow', () => {
-      expect(wardenWith('docker exec my-app cat /etc/hosts', { trustedDockerContainers: toTargets(containers) }).decision).toBe('allow');
+      expect(wardenWith('docker exec my-app cat /etc/hosts', { trustedRemotes: toRemotes(containers, 'docker') }).decision).toBe('allow');
     });
 
     it('docker exec -it my-app → allow (interactive)', () => {
-      expect(wardenWith('docker exec -it my-app', { trustedDockerContainers: toTargets(containers) }).decision).toBe('allow');
+      expect(wardenWith('docker exec -it my-app', { trustedRemotes: toRemotes(containers, 'docker') }).decision).toBe('allow');
     });
 
     it('docker exec my-app sudo rm -rf / → deny', () => {
-      expect(wardenWith('docker exec my-app sudo rm -rf /', { trustedDockerContainers: toTargets(containers) }).decision).toBe('deny');
+      expect(wardenWith('docker exec my-app sudo rm -rf /', { trustedRemotes: toRemotes(containers, 'docker') }).decision).toBe('deny');
     });
 
     it('docker exec unknown-app ls → ask', () => {
-      expect(wardenWith('docker exec unknown-app ls', { trustedDockerContainers: toTargets(containers) }).decision).toBe('ask');
+      expect(wardenWith('docker exec unknown-app ls', { trustedRemotes: toRemotes(containers, 'docker') }).decision).toBe('ask');
     });
 
     it('docker exec dev-web npm start → allow (glob)', () => {
-      expect(wardenWith('docker exec dev-web npm start', { trustedDockerContainers: toTargets(containers) }).decision).toBe('allow');
+      expect(wardenWith('docker exec dev-web npm start', { trustedRemotes: toRemotes(containers, 'docker') }).decision).toBe('allow');
     });
   });
 
@@ -364,23 +368,23 @@ describe('integration: realistic commands', () => {
     const contexts = ['minikube', 'dev-*'];
 
     it('kubectl exec --context minikube pod -- cat /tmp/log → allow', () => {
-      expect(wardenWith('kubectl exec --context minikube pod -- cat /tmp/log', { trustedKubectlContexts: toTargets(contexts) }).decision).toBe('allow');
+      expect(wardenWith('kubectl exec --context minikube pod -- cat /tmp/log', { trustedRemotes: toRemotes(contexts, 'kubectl') }).decision).toBe('allow');
     });
 
     it('kubectl exec --context minikube -it pod → allow (interactive)', () => {
-      expect(wardenWith('kubectl exec --context minikube -it pod', { trustedKubectlContexts: toTargets(contexts) }).decision).toBe('allow');
+      expect(wardenWith('kubectl exec --context minikube -it pod', { trustedRemotes: toRemotes(contexts, 'kubectl') }).decision).toBe('allow');
     });
 
     it('kubectl exec --context minikube pod -- sudo rm -rf / → deny', () => {
-      expect(wardenWith('kubectl exec --context minikube pod -- sudo rm -rf /', { trustedKubectlContexts: toTargets(contexts) }).decision).toBe('deny');
+      expect(wardenWith('kubectl exec --context minikube pod -- sudo rm -rf /', { trustedRemotes: toRemotes(contexts, 'kubectl') }).decision).toBe('deny');
     });
 
     it('kubectl exec --context production pod -- ls → ask (untrusted)', () => {
-      expect(wardenWith('kubectl exec --context production pod -- ls', { trustedKubectlContexts: toTargets(contexts) }).decision).toBe('ask');
+      expect(wardenWith('kubectl exec --context production pod -- ls', { trustedRemotes: toRemotes(contexts, 'kubectl') }).decision).toBe('ask');
     });
 
     it('kubectl exec --context=dev-east pod -- ls → allow (=syntax, glob)', () => {
-      expect(wardenWith('kubectl exec --context=dev-east pod -- ls', { trustedKubectlContexts: toTargets(contexts) }).decision).toBe('allow');
+      expect(wardenWith('kubectl exec --context=dev-east pod -- ls', { trustedRemotes: toRemotes(contexts, 'kubectl') }).decision).toBe('allow');
     });
   });
 
@@ -422,27 +426,27 @@ describe('integration: realistic commands', () => {
     const sprites = ['my-sprite', 'dev-*'];
 
     it('sprite exec -s my-sprite ls -la → allow', () => {
-      expect(wardenWith('sprite exec -s my-sprite ls -la', { trustedSprites: toTargets(sprites) }).decision).toBe('allow');
+      expect(wardenWith('sprite exec -s my-sprite ls -la', { trustedRemotes: toRemotes(sprites, 'sprite') }).decision).toBe('allow');
     });
 
     it('sprite -o myorg -s my-sprite exec npm start → allow', () => {
-      expect(wardenWith('sprite -o myorg -s my-sprite exec npm start', { trustedSprites: toTargets(sprites) }).decision).toBe('allow');
+      expect(wardenWith('sprite -o myorg -s my-sprite exec npm start', { trustedRemotes: toRemotes(sprites, 'sprite') }).decision).toBe('allow');
     });
 
     it('sprite exec -s my-sprite sudo rm -rf / → deny', () => {
-      expect(wardenWith('sprite exec -s my-sprite sudo rm -rf /', { trustedSprites: toTargets(sprites) }).decision).toBe('deny');
+      expect(wardenWith('sprite exec -s my-sprite sudo rm -rf /', { trustedRemotes: toRemotes(sprites, 'sprite') }).decision).toBe('deny');
     });
 
     it('sprite exec -s unknown ls → ask (untrusted)', () => {
-      expect(wardenWith('sprite exec -s unknown ls', { trustedSprites: toTargets(sprites) }).decision).toBe('ask');
+      expect(wardenWith('sprite exec -s unknown ls', { trustedRemotes: toRemotes(sprites, 'sprite') }).decision).toBe('ask');
     });
 
     it('sprite console -s my-sprite → allow (interactive)', () => {
-      expect(wardenWith('sprite console -s my-sprite', { trustedSprites: toTargets(sprites) }).decision).toBe('allow');
+      expect(wardenWith('sprite console -s my-sprite', { trustedRemotes: toRemotes(sprites, 'sprite') }).decision).toBe('allow');
     });
 
     it('sprite exec -s dev-web cat /etc/hosts → allow (glob)', () => {
-      expect(wardenWith('sprite exec -s dev-web cat /etc/hosts', { trustedSprites: toTargets(sprites) }).decision).toBe('allow');
+      expect(wardenWith('sprite exec -s dev-web cat /etc/hosts', { trustedRemotes: toRemotes(sprites, 'sprite') }).decision).toBe('allow');
     });
   });
 
