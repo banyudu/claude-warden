@@ -350,8 +350,9 @@ export function parseCommand(input: string): ParseResult {
         for (const cmd of cmdAst.commands) {
           walkNode(cmd, result);
         }
-        // Heredocs are complex — flag as hasSubshell so evaluator can decide
-        return { commands: result.commands, hasSubshell: true, subshellCommands: result.subshellCommands, parseError: false };
+        // Heredoc body is stdin data, not code — only flag hasSubshell if the
+        // command itself contains subshells (e.g. command substitutions on the first line).
+        return { commands: result.commands, hasSubshell: result.hasSubshell, subshellCommands: result.subshellCommands, parseError: false };
       } catch {
         return { commands: [], hasSubshell: true, subshellCommands: [], parseError: true };
       }
@@ -377,9 +378,9 @@ export function parseCommand(input: string): ParseResult {
         for (const cmd of ast.commands) {
           walkNode(cmd, result);
         }
-        return { commands: result.commands, hasSubshell: true, subshellCommands: result.subshellCommands, parseError: false };
+        return { commands: result.commands, hasSubshell: result.hasSubshell, subshellCommands: result.subshellCommands, parseError: false };
       } catch {
-        return { commands: [], hasSubshell: true, subshellCommands: [], parseError: true };
+        return { commands: [], hasSubshell: false, subshellCommands: [], parseError: true };
       }
     }
     // General parse failure — try regex fallback to extract at least the command name

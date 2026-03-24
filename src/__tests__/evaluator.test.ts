@@ -211,6 +211,28 @@ describe('evaluator', () => {
     });
   });
 
+  describe('heredocs', () => {
+    it('allows cat with heredoc (body is data, not code)', () => {
+      expect(eval_('cat <<EOF\nhello world\nEOF').decision).toBe('allow');
+    });
+
+    it('allows cat > file with heredoc', () => {
+      expect(eval_("cat > /tmp/out.md << 'EOF'\nsome content\nEOF").decision).toBe('allow');
+    });
+
+    it('allows tee with heredoc', () => {
+      expect(eval_("tee /tmp/out.txt << 'EOF'\nhello\nEOF").decision).toBe('allow');
+    });
+
+    it('asks for python with heredoc (python executes stdin as code)', () => {
+      expect(eval_("python3 << 'EOF'\nprint('hi')\nEOF").decision).toBe('ask');
+    });
+
+    it('asks for unknown command with heredoc', () => {
+      expect(eval_("unknown-cmd << 'EOF'\ndata\nEOF").decision).toBe('ask');
+    });
+  });
+
   describe('edge cases', () => {
     it('allows empty command', () => {
       expect(eval_('').decision).toBe('allow');

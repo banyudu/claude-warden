@@ -135,7 +135,7 @@ describe('parseCommand', () => {
 
   it('handles heredocs by extracting base command', () => {
     const result = parseCommand('cat <<EOF\nhello\nEOF');
-    expect(result.hasSubshell).toBe(true); // heredocs flagged as complex
+    expect(result.hasSubshell).toBe(false); // heredoc body is data, not a subshell
     expect(result.commands.length).toBeGreaterThanOrEqual(1);
     expect(result.commands[0].command).toBe('cat');
   });
@@ -210,11 +210,26 @@ describe('parseCommand', () => {
     expect(result.commands[0].command).toBe('git');
   });
 
-  it('still flags bare heredocs (without cat subshell) as complex', () => {
+  it('does not flag bare heredocs as subshell — body is data, not code', () => {
     const result = parseCommand('cat <<EOF\nhello\nEOF');
-    expect(result.hasSubshell).toBe(true);
+    expect(result.hasSubshell).toBe(false);
     expect(result.commands.length).toBeGreaterThanOrEqual(1);
     expect(result.commands[0].command).toBe('cat');
+  });
+
+  it('handles heredoc with redirect (cat > file << EOF)', () => {
+    const result = parseCommand("cat > /tmp/out.md << 'EOF'\nsome content\nEOF");
+    expect(result.parseError).toBe(false);
+    expect(result.hasSubshell).toBe(false);
+    expect(result.commands.length).toBeGreaterThanOrEqual(1);
+    expect(result.commands[0].command).toBe('cat');
+  });
+
+  it('handles heredoc with tee', () => {
+    const result = parseCommand("tee /tmp/out.txt << 'EOF'\nhello world\nEOF");
+    expect(result.parseError).toBe(false);
+    expect(result.hasSubshell).toBe(false);
+    expect(result.commands[0].command).toBe('tee');
   });
 
   // --- Path parentheses (e.g. Next.js route groups) ---
