@@ -42,6 +42,28 @@ The result: **100+ common dev commands auto-approved**, dangerous commands auto-
 | `ssh devserver cat /etc/hosts` | Prompted | Auto-allowed (trusted host + safe cmd) |
 | `ssh devserver sudo rm -rf /` | Prompted | Auto-denied (trusted host + dangerous cmd) |
 
+## Warden vs Auto Mode
+
+Claude Code recently introduced [Auto Mode](https://code.claude.com/docs/en/permission-modes#eliminate-prompts-with-auto-mode), which uses a background classifier model to approve or block actions without manual prompts. Here's how it compares to Warden:
+
+| | Warden | Auto Mode |
+|---|---|---|
+| **How it works** | Deterministic rule engine with AST-based shell parsing | LLM classifier (Sonnet 4.6) reviews each action |
+| **Availability** | All plans, all models, all providers (API, Bedrock, Vertex) | Team/Enterprise only, Sonnet 4.6 or Opus 4.6 only |
+| **Token cost** | Zero — runs locally as a hook | Extra classifier calls count toward token usage |
+| **Latency** | Near-instant (local process) | Network round-trip per classified action |
+| **Configurability** | Full control via YAML — per-command rules, argument patterns, trusted hosts | Prose-based rules, admin-managed trusted infrastructure |
+| **Predictability** | Deterministic — same command always gets the same decision | Probabilistic — classifier may have false positives/negatives |
+| **Scope** | Shell commands only (Bash tool) | All tool calls (Bash, file edits, network, subagents) |
+
+**Can I use both?** Yes. Warden runs as a `PreToolUse` hook, which executes before Auto Mode's classifier. Warden handles fast, deterministic decisions for shell commands, and Auto Mode covers everything else (file edits, network requests, subagent spawning). They are complementary.
+
+**When to choose Warden alone:** You're on a Free/Pro plan, using API/Bedrock/Vertex providers, want zero extra token cost, or need deterministic and auditable command-level rules.
+
+**When to choose Auto Mode alone:** You want broader coverage beyond shell commands and are comfortable with classifier-based decisions.
+
+**When to use both:** You want the best of both worlds — instant deterministic shell command filtering from Warden, plus Auto Mode's broader safety net for non-shell actions.
+
 ## Install
 
 Two commands inside Claude Code:
