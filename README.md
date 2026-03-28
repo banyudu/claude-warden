@@ -52,7 +52,7 @@ Claude Code recently introduced [Auto Mode](https://code.claude.com/docs/en/perm
 | **Availability** | All plans, all models, all providers (API, Bedrock, Vertex) | Team/Enterprise only, Sonnet 4.6 or Opus 4.6 only |
 | **Token cost** | Zero — runs locally as a hook | Extra classifier calls count toward token usage |
 | **Latency** | Near-instant (local process) | Network round-trip per classified action |
-| **Configurability** | Full control via YAML — per-command rules, argument patterns, trusted hosts | Prose-based rules, admin-managed trusted infrastructure |
+| **Configurability** | Full control via YAML — per-command rules, `targetPolicies`, and `trustedRemotes` | Prose-based rules, admin-managed trusted infrastructure |
 | **Predictability** | Deterministic — same command always gets the same decision | Probabilistic — classifier may have false positives/negatives |
 | **Scope** | Shell commands only (Bash tool) | All tool calls (Bash, file edits, network, subagents) |
 
@@ -151,17 +151,34 @@ alwaysAllow:
 alwaysDeny:
   - nc
 
-# Trusted remote targets (auto-allow connection, evaluate remote commands)
-trustedSSHHosts:
-  - devserver
-  - "*.internal.company.com"
-trustedDockerContainers:
-  - my-app
-  - dev-*
-trustedKubectlContexts:
-  - minikube
-trustedSprites:
-  - my-sprite
+# Trusted remote contexts (auto-allow connection, evaluate remote commands)
+trustedRemotes:
+  - context: ssh
+    name: devserver
+  - context: ssh
+    name: "*.internal.company.com"
+  - context: docker
+    name: my-app
+  - context: docker
+    name: dev-*
+  - context: kubectl
+    name: minikube
+  - context: sprite
+    name: my-sprite
+
+# Target-based policy overrides for data-sensitive commands
+targetPolicies:
+  - type: path
+    path: "{{cwd}}"
+    commands: [rm, cp, mv]
+    decision: allow
+  - type: endpoint
+    pattern: "http://localhost:*"
+    decision: allow
+  - type: database
+    host: "prod-db.internal"
+    decision: deny
+    reason: Production database
 
 # Per-command rules (override built-in defaults for this scope)
 rules:
@@ -233,21 +250,30 @@ Commands like `node`, `npx`, `docker`, `ssh`, `git push --force`, `rm`, `chmod` 
 - `rm temp.txt` is allowed but `rm -rf /` is prompted
 - `chmod 644 file` prompts but `chmod -R 777 /var` is denied
 
-### Trusted remote targets
-Configure trusted hosts/containers/contexts to auto-allow connections and recursively evaluate remote commands:
-- **SSH**: `trustedSSHHosts` — also covers `scp` and `rsync`
-- **Docker**: `trustedDockerContainers` — for `docker exec`
-- **kubectl**: `trustedKubectlContexts` — for `kubectl exec` (requires explicit `--context`)
-- **Sprite**: `trustedSprites` — for `sprite exec`/`console`
+### Trusted remotes
+Configure `trustedRemotes` to auto-allow connections and recursively evaluate remote commands:
+- **SSH**: `context: ssh` — also covers `scp` and `rsync`
+- **Docker**: `context: docker` — for `docker exec`
+- **kubectl**: `context: kubectl` — for `kubectl exec` (requires explicit `--context`)
+- **Sprite**: `context: sprite` — for `sprite exec`/`console`
+- **Fly.io**: `context: fly` — for `fly ssh console`
 
-All support glob patterns: `*`, `?`, `[...]`, `[!...]`, `{a,b,c}`
+Remote names support glob patterns: `*`, `?`, `[...]`, `[!...]`, `{a,b,c}`
+
+### Target-based policies
+Configure `targetPolicies` to override decisions based on what a command touches:
+- **Path**: allow or deny commands targeting specific files/directories, including `{{cwd}}`
+- **Database**: match DB host, optional port, and optional database name
+- **Endpoint**: match HTTP(S) endpoints for tools like `curl` and `wget`
+
+Legacy aliases such as `trustedSSHHosts`, `trustedDockerContainers`, `trustedKubectlContexts`, `trustedSprites`, `trustedFlyApps`, `trustedPaths`, `trustedDatabases`, and `trustedEndpoints` are still supported, but new configs should prefer `trustedRemotes` and `targetPolicies`.
 
 ## How it works
 
 1. Claude Code calls the `PreToolUse` hook before every Bash command
 2. Warden parses the command into an AST via [bash-parser](https://github.com/vorpaljs/bash-parser), walking the tree to extract individual commands from pipes, chains, logical expressions, and subshells
 3. Shell wrappers (`sh -c`, `bash -c`) and remote commands (`ssh`, `docker exec`, `kubectl exec`, `sprite exec`) are recursively parsed and evaluated
-4. Each command is evaluated through the rule hierarchy: alwaysDeny → alwaysAllow → trusted remote targets → command-specific rules with argument matching → default decision (checked per layer in priority order)
+4. Each command is evaluated through the rule hierarchy: alwaysDeny → alwaysAllow → target-based policies → trusted remote contexts → command-specific rules with argument matching → default decision (checked per layer in priority order)
 5. Results are combined: any deny → deny whole pipeline, any ask → ask, all allow → allow
 6. Returns the decision via stdout JSON (allow/ask) or exit code 2 (deny), with a system message explaining the reasoning for deny/ask decisions
 
