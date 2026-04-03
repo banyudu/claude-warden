@@ -347,6 +347,17 @@ describe('regex fallback parser', () => {
   });
 });
 
+describe('parser regressions', () => {
+  it('parses grep regex anchors in double-quoted pipeline args (#46)', () => {
+    const result = parseCommand('ls -la /tmp/ | grep -E "\\.sql$"');
+    expect(result.parseError).toBe(false);
+    expect(result.commands).toHaveLength(2);
+    expect(result.commands[0].command).toBe('ls');
+    expect(result.commands[1].command).toBe('grep');
+    expect(result.commands[1].args).toEqual(['-E', '\\.sql$']);
+  });
+});
+
 // TODO(#30): bash-parser misparses these — currently handled by regex fallback
 describe('bash-parser known limitations (#30)', () => {
   it('$ followed by / in double quotes (regex anchors)', () => {

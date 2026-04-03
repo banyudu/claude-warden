@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       bash-parser:
-        specifier: ^0.5.0
-        version: 0.5.0
+        specifier: npm:@banyudu/bash-parser@0.5.2
+        version: '@banyudu/bash-parser@0.5.2'
       yaml:
         specifier: ^2.4.0
         version: 2.8.2
@@ -29,6 +29,10 @@ importers:
         version: 1.6.1(@types/node@20.19.33)
 
 packages:
+
+  '@banyudu/bash-parser@0.5.2':
+    resolution: {integrity: sha512-0af6g3sKX5fR069PKgTLOviAssfcfYfgf8VJmMLr15KVBJq90exCZsx95O5kjU9C/wxzycQVDYtk6fiAlLft5g==}
+    engines: {node: '>=10'}
 
   '@esbuild/aix-ppc64@0.21.5':
     resolution: {integrity: sha512-1SDgH6ZSPTlggy1yI6+Dbkiz8xzpHJEVAlF/AM1tHPLsf5STom9rwtjE4hKAF20FfXXNTFqEYXyJNWh1GiZedQ==}
@@ -519,10 +523,6 @@ packages:
   babylon@6.18.0:
     resolution: {integrity: sha512-q/UEjfGJ2Cm3oKV71DJz9d25TPnq5rhBVL2Q4fA5wcC3jcrdn7+SssEybFIxwAvvP+YCsCYNKughoF33GxgycQ==}
     hasBin: true
-
-  bash-parser@0.5.0:
-    resolution: {integrity: sha512-AQR43o4W4sj4Jf+oy4cFtGgyBps4B+MYnJg6Xds8VVC7yomFtQekhOORQNHfQ8D6YJ0XENykr3TpxMn3rUtgeg==}
-    engines: {node: '>=4'}
 
   bundle-require@5.1.0:
     resolution: {integrity: sha512-3WrrOuZiyaaZPWiEt4G3+IffISVC9HYlWueJEBWED4ZH4aIAC2PnkdnuRrR94M+w6yGWn4AglWtJtBI8YqvgoA==}
@@ -1038,6 +1038,30 @@ packages:
 
 snapshots:
 
+  '@banyudu/bash-parser@0.5.2':
+    dependencies:
+      array-last: 1.3.0
+      babylon: 6.18.0
+      compose-function: 3.0.3
+      curry: 1.2.0
+      deep-freeze: 0.0.1
+      filter-iterator: 0.0.1
+      filter-obj: 1.1.0
+      has-own-property: 0.1.0
+      identity-function: 1.0.0
+      iterable-lookahead: 1.0.0
+      iterable-transform-replace: 1.2.0
+      magic-string: 0.16.0
+      map-iterable: 1.0.1
+      map-obj: 2.0.0
+      object-pairs: 0.1.0
+      object-values: 1.0.0
+      reverse-arguments: 1.0.0
+      shell-quote-word: 1.0.1
+      to-pascal-case: 1.0.0
+      transform-spread-iterable: 1.4.1
+      unescape-js: 1.1.4
+
   '@esbuild/aix-ppc64@0.21.5':
     optional: true
 
@@ -1334,30 +1358,6 @@ snapshots:
   assertion-error@1.1.0: {}
 
   babylon@6.18.0: {}
-
-  bash-parser@0.5.0:
-    dependencies:
-      array-last: 1.3.0
-      babylon: 6.18.0
-      compose-function: 3.0.3
-      curry: 1.2.0
-      deep-freeze: 0.0.1
-      filter-iterator: 0.0.1
-      filter-obj: 1.1.0
-      has-own-property: 0.1.0
-      identity-function: 1.0.0
-      iterable-lookahead: 1.0.0
-      iterable-transform-replace: 1.2.0
-      magic-string: 0.16.0
-      map-iterable: 1.0.1
-      map-obj: 2.0.0
-      object-pairs: 0.1.0
-      object-values: 1.0.0
-      reverse-arguments: 1.0.0
-      shell-quote-word: 1.0.1
-      to-pascal-case: 1.0.0
-      transform-spread-iterable: 1.4.1
-      unescape-js: 1.1.4
 
   bundle-require@5.1.0(esbuild@0.27.3):
     dependencies:

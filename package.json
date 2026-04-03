@@ -46,7 +46,7 @@
     "docs:build": "cd docs-src && pnpm install && pnpm build"
   },
   "dependencies": {
-    "bash-parser": "^0.5.0",
+    "bash-parser": "npm:@banyudu/bash-parser@0.5.2",
     "yaml": "^2.4.0"
   },
   "devDependencies": {
