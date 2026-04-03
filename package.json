@@ -36,7 +36,7 @@
     "typecheck": "tsc --noEmit",
     "eval": "node dist/index.cjs",
     "codex:export-rules": "node dist/codex-export.cjs",
-    "sync-plugin-version": "node -e \"const p=require('./package.json'),fs=require('fs'),f='.claude-plugin/plugin.json',j=JSON.parse(fs.readFileSync(f));j.version=p.version;fs.writeFileSync(f,JSON.stringify(j,null,2)+'\\n')\"",
+    "sync-plugin-version": "node scripts/sync-plugin-version.cjs",
     "release": "scripts/release.sh patch",
     "release:minor": "scripts/release.sh minor",
     "release:major": "scripts/release.sh major",
