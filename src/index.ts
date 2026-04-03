@@ -37,8 +37,8 @@ async function main() {
     process.exit(0);
   }
 
-  // Auto-allow when running with --dangerously-skip-permissions
-  if (input.permission_mode === 'dangerously-skip-permissions') {
+  // Claude Code sends the internal enum value, not the CLI flag name.
+  if (input.permission_mode === 'bypassPermissions') {
     process.exit(0);
   }
 

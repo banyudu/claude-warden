@@ -4,7 +4,7 @@ import { evaluate } from '../evaluator';
 import { DEFAULT_CONFIG } from '../defaults';
 
 /**
- * Verifies that the dangerously-skip-permissions check in index.ts
+ * Verifies that the bypassPermissions check in index.ts
  * would prevent evaluation of normally-denied commands.
  *
  * The actual early-exit lives in index.ts (process.exit(0) before
@@ -12,7 +12,7 @@ import { DEFAULT_CONFIG } from '../defaults';
  * WOULD be denied under normal evaluation, proving the early-exit
  * is necessary.
  */
-describe('dangerously-skip-permissions mode', () => {
+describe('bypassPermissions mode', () => {
   const dangerousCommands = [
     'sudo rm -rf /',
     'shutdown -h now',
@@ -29,7 +29,9 @@ describe('dangerously-skip-permissions mode', () => {
 
   it('permission_mode field exists on HookInput type', async () => {
     // Type-level check: ensure the field we rely on in index.ts is defined
-    const { } = await import('../types') as { HookInput: { permission_mode: string } };
+    const { } = await import('../types') as {
+      HookInput: { permission_mode: 'bypassPermissions' | 'default' };
+    };
     // If this compiles and runs, the type exists
     expect(true).toBe(true);
   });
@@ -42,11 +44,11 @@ describe('dangerously-skip-permissions mode', () => {
       path.resolve(__dirname, '../index.ts'),
       'utf-8',
     );
-    expect(indexSrc).toContain("permission_mode === 'dangerously-skip-permissions'");
+    expect(indexSrc).toContain("permission_mode === 'bypassPermissions'");
     expect(indexSrc).toContain('process.exit(0)');
 
     // Verify the check comes BEFORE parseCommand
-    const skipIndex = indexSrc.indexOf("permission_mode === 'dangerously-skip-permissions'");
+    const skipIndex = indexSrc.indexOf("permission_mode === 'bypassPermissions'");
     const parseIndex = indexSrc.indexOf('parseCommand(command)');
     expect(skipIndex).toBeLessThan(parseIndex);
   });

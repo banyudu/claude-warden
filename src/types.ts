@@ -121,7 +121,13 @@ export interface HookInput {
   tool_name: string;
   tool_input: { command?: string; [key: string]: unknown };
   cwd: string;
-  permission_mode: string;
+  permission_mode:
+    | 'default'
+    | 'plan'
+    | 'acceptEdits'
+    | 'auto'
+    | 'dontAsk'
+    | 'bypassPermissions';
 }
 
 export interface HookOutput {

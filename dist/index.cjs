@@ -20825,7 +20825,7 @@ async function main() {
   if (input.tool_name !== "Bash") {
     process.exit(0);
   }
-  if (input.permission_mode === "dangerously-skip-permissions") {
+  if (input.permission_mode === "bypassPermissions") {
     process.exit(0);
   }
   if (process.env.WARDEN_YOLO === "true" || process.env.WARDEN_YOLO === "1") {
