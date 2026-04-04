@@ -75,6 +75,20 @@ Two commands inside Claude Code:
 
 That's it. Restart Claude Code and Warden is active.
 
+### Update
+
+```
+claude plugin update warden@claude-warden
+```
+
+If the update command reports you're already at the latest version but you know a newer version exists, the local marketplace cache may be stale. Force a refresh:
+
+```bash
+cd ~/.claude/plugins/marketplaces/claude-warden && git pull
+```
+
+Then run the update command again.
+
 ### Alternative: install from npm
 
 ```bash
