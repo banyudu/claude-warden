@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.4.0] - 2026-04-07
+
+### Features
+- Add GitHub Copilot CLI support and generic CLI support
+
+### Bug Fixes
+- Sync `.claude-plugin/marketplace.json` version and auto-update it during release
+
+### Other Changes
+- Extract plugin version syncing into `scripts/sync-plugin-version.cjs`
+- Add plugin update instructions to README
 ## [2.3.0] - 2026-03-16
 
 ### Features
