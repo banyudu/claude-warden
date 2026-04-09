@@ -110,20 +110,13 @@ Codex supports [PreToolUse hooks](https://developers.openai.com/codex/hooks) wit
 
 ### Setup
 
-1. Install Warden:
+1. Install Warden globally so the `warden-hook` binary lands in your `PATH`:
 
 ```bash
 npm install -g claude-warden
 ```
 
-2. Resolve the absolute path to the hook binary:
-
-```bash
-node -e "console.log(require.resolve('claude-warden'))"
-# → /usr/local/lib/node_modules/claude-warden/dist/index.cjs
-```
-
-3. Copy the template to `~/.codex/hooks.json` (user-wide) or `<repo>/.codex/hooks.json` (project-scoped), and edit the `command` field with the absolute path from step 2:
+2. Drop the following into `~/.codex/hooks.json` (user-wide) or `<repo>/.codex/hooks.json` (project-scoped):
 
 ```json
 {
@@ -134,7 +127,7 @@ node -e "console.log(require.resolve('claude-warden'))"
         "hooks": [
           {
             "type": "command",
-            "command": "node /usr/local/lib/node_modules/claude-warden/dist/index.cjs",
+            "command": "warden-hook",
             "statusMessage": "Checking Bash command with Warden"
           }
         ]
@@ -144,7 +137,7 @@ node -e "console.log(require.resolve('claude-warden'))"
 }
 ```
 
-A ready-to-edit template ships at [`.codex/hooks.json`](.codex/hooks.json).
+A ready-to-use template ships at [`.codex/hooks.json`](.codex/hooks.json). If `warden-hook` isn't on your `PATH` (e.g. non-global install), use the absolute path instead: `node /path/to/claude-warden/dist/index.cjs`.
 
 ### How it works
 

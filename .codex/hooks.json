@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node /ABSOLUTE/PATH/TO/claude-warden/dist/index.cjs",
+            "command": "warden-hook",
             "statusMessage": "Checking Bash command with Warden"
           }
         ]

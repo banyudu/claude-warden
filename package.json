@@ -5,7 +5,8 @@
   "type": "module",
   "main": "dist/index.cjs",
   "bin": {
-    "warden": "dist/cli.cjs"
+    "warden": "dist/cli.cjs",
+    "warden-hook": "dist/index.cjs"
   },
   "license": "MIT",
   "author": "banyudu",
