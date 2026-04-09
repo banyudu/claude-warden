@@ -104,26 +104,68 @@ cd claude-warden && npm install && npm run build
 claude --plugin-dir ./claude-warden
 ```
 
-## Codex CLI (experimental)
+## Codex CLI
 
-Codex currently uses `execpolicy` (`.rules` files) for command approvals. Warden can export your effective command-level decisions to a Codex rules file:
+Codex supports [PreToolUse hooks](https://developers.openai.com/codex/hooks) with a wire protocol nearly identical to Claude Code's, so the **same** Warden hook binary works natively — no rule export needed.
 
-```bash
-pnpm run build
-pnpm run codex:export-rules
-```
+### Setup
 
-This writes `.codex/rules/warden.rules` in the current project by default.
-
-- Use `--cwd <dir>` to choose which workspace config to load.
-- Use `--out <path>` to choose an output path.
-- Use `--stdout` to print the generated rules.
-
-Example:
+1. Install Warden:
 
 ```bash
-node dist/codex-export.cjs --cwd . --out .codex/rules/warden.rules
+npm install -g claude-warden
 ```
+
+2. Resolve the absolute path to the hook binary:
+
+```bash
+node -e "console.log(require.resolve('claude-warden'))"
+# → /usr/local/lib/node_modules/claude-warden/dist/index.cjs
+```
+
+3. Copy the template to `~/.codex/hooks.json` (user-wide) or `<repo>/.codex/hooks.json` (project-scoped), and edit the `command` field with the absolute path from step 2:
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /usr/local/lib/node_modules/claude-warden/dist/index.cjs",
+            "statusMessage": "Checking Bash command with Warden"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+A ready-to-edit template ships at [`.codex/hooks.json`](.codex/hooks.json).
+
+### How it works
+
+Codex sends the same `{tool_name, tool_input.command, cwd, session_id, ...}` payload on stdin and accepts the same `hookSpecificOutput.permissionDecision` response as Claude Code. The identical `dist/index.cjs` binary runs the full parser/evaluator pipeline — trusted hosts, YOLO mode, argument-aware rules, and all. The same `~/.claude/warden.yaml` and `.claude/warden.yaml` config files drive both.
+
+### Known Codex limitations
+
+- **Bash only** — Codex PreToolUse currently intercepts only shell commands; MCP, Write, and WebSearch tools are not hooked.
+- **Work in progress upstream** — Codex's hook system may miss some shell invocations. Treat it as defense-in-depth, not a hard sandbox.
+- **`deny` is authoritative; `allow`/`ask` fail open** — Codex currently honors `deny` (and exit code 2) but treats `allow`/`ask` as "fail open" (command proceeds). This is safe: Warden's deny list still blocks dangerous commands.
+- **No undo** — hooks cannot revert a command that has already executed.
+
+### Fallback: static rule export
+
+For environments where the hook approach isn't viable, Warden can still export a static `execpolicy` rules file:
+
+```bash
+pnpm run codex:export-rules   # writes .codex/rules/warden.rules
+```
+
+Use `--cwd <dir>`, `--out <path>`, or `--stdout` to customize. This snapshot loses dynamic behavior (trusted hosts, YOLO, etc.) but works with older Codex setups.
 
 ## GitHub Copilot CLI
 

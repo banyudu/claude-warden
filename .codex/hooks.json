@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /ABSOLUTE/PATH/TO/claude-warden/dist/index.cjs",
+            "statusMessage": "Checking Bash command with Warden"
+          }
+        ]
+      }
+    ]
+  }
+}
