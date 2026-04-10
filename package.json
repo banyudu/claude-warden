@@ -1,6 +1,6 @@
 {
   "name": "claude-warden",
-  "version": "2.5.0",
+  "version": "2.5.1",
   "description": "Smart command safety filter for Claude Code — auto-approves safe commands, blocks dangerous ones",
   "type": "module",
   "main": "dist/index.cjs",
@@ -36,7 +36,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsup",
+    "build": "tsup && chmod +x dist/*.cjs",
     "dev": "tsup --watch",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -48,7 +48,7 @@
     "release": "scripts/release.sh patch",
     "release:minor": "scripts/release.sh minor",
     "release:major": "scripts/release.sh major",
-    "prepublishOnly": "pnpm run sync-plugin-version && pnpm run build && pnpm run test",
+    "prepublishOnly": "pnpm run sync-plugin-version && pnpm run build && pnpm run test && chmod +x dist/*.cjs",
     "postpublish": "claude plugin update claude-warden@local 2>/dev/null; claude plugin update warden@claude-warden 2>/dev/null; echo 'Plugin caches updated'",
     "docs:dev": "cd docs-src && pnpm dev",
     "docs:build": "cd docs-src && pnpm install && pnpm build"

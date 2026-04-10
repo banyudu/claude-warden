@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/dist/index.cjs",
+            "command": "${CLAUDE_PLUGIN_ROOT}/dist/index.cjs",
             "timeout": 5
           }
         ]
