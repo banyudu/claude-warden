@@ -73,6 +73,7 @@ function pkgManagerRule(command: string, extraSafeCmds: string[] = []): CommandR
         decision: 'allow',
         description: `Standard ${command} commands`,
       },
+      safeDevToolsPattern(),
       VERSION_HELP_FLAGS,
     ],
   };
