@@ -22,6 +22,9 @@ const SAFE_PKG_MANAGER_CMDS = [
   'ls', 'list', 'run', 'test', 'start', 'build', 'init', 'create',
   'info', 'view', 'show', 'why', 'pack', 'cache', 'config', 'get', 'set',
   'version', 'help', 'exec', 'dedupe', 'prune', 'audit', 'completion', 'whoami',
+  // Common script aliases (run implicitly by npm/pnpm/yarn/bun)
+  'typecheck', 'type-check', 'lint', 'format', 'check', 'check-types',
+  'test:unit', 'test:e2e', 'test:watch', 'lint:fix',
 ];
 
 const VERSION_HELP_FLAGS: ArgPattern = {
@@ -230,7 +233,7 @@ export const DEFAULT_CONFIG: WardenConfig = {
       pkgRunnerRule('pnpx'),
       // npm / pnpm / yarn — package managers
       pkgManagerRule('npm', ['ci', 'search', 'explain', 'prefix', 'root', 'fund', 'doctor', 'diff', 'pkg', 'query', 'shrinkwrap']),
-      pkgManagerRule('pnpm', ['store', 'fetch', 'doctor', 'patch']),
+      pkgManagerRule('pnpm', ['store', 'fetch', 'doctor', 'patch', '--filter', '-F', '--recursive', '-r', '--workspace-root', '-w']),
       pkgManagerRule('yarn', ['up', 'dlx', 'workspaces']),
       // bun — runtime + package manager
       {
