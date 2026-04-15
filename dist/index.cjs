@@ -18818,7 +18818,18 @@ var SAFE_PKG_MANAGER_CMDS = [
   "prune",
   "audit",
   "completion",
-  "whoami"
+  "whoami",
+  // Common script aliases (run implicitly by npm/pnpm/yarn/bun)
+  "typecheck",
+  "type-check",
+  "lint",
+  "format",
+  "check",
+  "check-types",
+  "test:unit",
+  "test:e2e",
+  "test:watch",
+  "lint:fix"
 ];
 var VERSION_HELP_FLAGS = {
   match: { anyArgMatches: ["^--(version|help)$", "^-[vh]$"] },
@@ -18861,6 +18872,7 @@ function pkgManagerRule(command, extraSafeCmds = []) {
         decision: "allow",
         description: `Standard ${command} commands`
       },
+      safeDevToolsPattern(),
       VERSION_HELP_FLAGS
     ]
   };
@@ -19184,7 +19196,7 @@ var DEFAULT_CONFIG = {
       pkgRunnerRule("pnpx"),
       // npm / pnpm / yarn — package managers
       pkgManagerRule("npm", ["ci", "search", "explain", "prefix", "root", "fund", "doctor", "diff", "pkg", "query", "shrinkwrap"]),
-      pkgManagerRule("pnpm", ["store", "fetch", "doctor", "patch"]),
+      pkgManagerRule("pnpm", ["store", "fetch", "doctor", "patch", "--filter", "-F", "--recursive", "-r", "--workspace-root", "-w"]),
       pkgManagerRule("yarn", ["up", "dlx", "workspaces"]),
       // bun — runtime + package manager
       {
