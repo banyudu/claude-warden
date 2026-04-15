@@ -19404,16 +19404,21 @@ var DEFAULT_CONFIG = {
       })),
       // --- Cloud CLIs ---
       { command: "gcloud", default: "ask", argPatterns: [
-        { match: { anyArgMatches: ["^(info|version|help|config|components)$"] }, decision: "allow", description: "Config/info" },
-        { match: { anyArgMatches: ["^(list|describe|get-iam-policy|get)$"] }, decision: "allow", description: "Read-only ops" },
+        { match: { anyArgMatches: ["^(info|version|help|topic|components|feedback|survey)$"] }, decision: "allow", description: "Info/meta commands" },
+        { match: { anyArgMatches: ["^config$"] }, decision: "allow", description: "Config subcommands" },
+        { match: { anyArgMatches: ["^(list|describe|get|get-iam-policy|browse|tail|read|show|search|lookup|check)$"] }, decision: "allow", description: "Read-only verbs" },
+        { match: { anyArgMatches: ["^(list|get|describe|show|print|read|search|lookup|check)-[a-z][a-z0-9-]*$"] }, decision: "allow", description: "Read-only verb-noun (list-enabled, get-value, print-access-token, etc.)" },
         VERSION_HELP_FLAGS
       ] },
       { command: "az", default: "ask", argPatterns: [
-        { match: { anyArgMatches: ["^(list|show|get)$"] }, decision: "allow", description: "Read-only ops" },
+        { match: { anyArgMatches: ["^(list|show|get|search|check)$"] }, decision: "allow", description: "Read-only verbs" },
+        { match: { anyArgMatches: ["^(list|show|get|search|check)-[a-z][a-z0-9-]*$"] }, decision: "allow", description: "Read-only verb-noun" },
+        { match: { anyArgMatches: ["^(version|help|account|feedback)$"] }, decision: "allow", description: "Info/meta commands" },
         VERSION_HELP_FLAGS
       ] },
       { command: "aws", default: "ask", argPatterns: [
-        { match: { anyArgMatches: ["^(describe|list|get|sts)$"] }, decision: "allow", description: "Read-only ops" },
+        { match: { anyArgMatches: ["^(describe|list|get|sts|help|search|lookup|check)$"] }, decision: "allow", description: "Read-only verbs" },
+        { match: { anyArgMatches: ["^(describe|list|get|search|lookup|check)-[a-z][a-z0-9-]*$"] }, decision: "allow", description: "Read-only verb-noun" },
         VERSION_HELP_FLAGS
       ] },
       // --- Helm ---
