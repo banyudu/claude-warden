@@ -175,3 +175,25 @@ notifyOnDeny: true
 #           anyArgMatches: ['^(ps|images|logs)$']
 #         decision: allow
 #         description: Read-only docker commands
+
+# Skill (slash command) rules — filter Claude Code skill invocations.
+# Skill names use the short form (e.g. "commit", not "/commit").
+# Glob patterns supported for namespace matching (e.g. "bd:*").
+# Built-in defaults auto-allow common safe skills (commit, review, simplify, init).
+# skills:
+#   defaultDecision: ask
+#   alwaysAllow:
+#     - commit
+#     - review
+#     - simplify
+#     - "bd:*"
+#   alwaysDeny:
+#     - deploy
+#   rules:
+#     - skill: release
+#       default: ask
+#       argPatterns:
+#         - match:
+#             argsMatch: ["--dry-run"]
+#           decision: allow
+#           description: Dry-run release is safe

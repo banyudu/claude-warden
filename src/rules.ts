@@ -5,6 +5,7 @@ import { join } from 'path';
 import type {
   WardenConfig, ConfigLayer, TrustedTarget,
   TrustedRemote, RemoteContext, TargetPolicy, PathPolicy, DatabasePolicy, EndpointPolicy,
+  SkillConfigLayer,
 } from './types';
 import { DEFAULT_CONFIG } from './defaults';
 
@@ -72,6 +73,16 @@ export function loadConfig(cwd?: string): WardenConfig {
     defaultLayer,
   ];
 
+  // Build skill layers: workspace > user > default
+  const defaultSkillLayer = config.skillRules.layers[0];
+  const userSkillLayer = userRaw?.skills ? extractSkillLayer(userRaw.skills as Record<string, unknown>) : null;
+  const workspaceSkillLayer = workspaceRaw?.skills ? extractSkillLayer(workspaceRaw.skills as Record<string, unknown>) : null;
+  config.skillRules.layers = [
+    ...(workspaceSkillLayer ? [workspaceSkillLayer] : []),
+    ...(userSkillLayer ? [userSkillLayer] : []),
+    defaultSkillLayer,
+  ];
+
   // Merge non-layer fields from user config, then workspace config (workspace wins)
   if (userRaw) mergeNonLayerFields(config, userRaw);
   if (workspaceRaw) mergeNonLayerFields(config, workspaceRaw);
@@ -97,18 +108,18 @@ function tryLoadFile(filePath: string): Record<string, unknown> | null {
   return null;
 }
 
-function extractLayer(raw: Record<string, unknown>): ConfigLayer {
+function extractGenericLayer(raw: Record<string, unknown>, nameKey: string): { alwaysAllow: string[]; alwaysDeny: string[]; rules: unknown[] } {
   const rules = Array.isArray(raw.rules) ? raw.rules : [];
   for (const rule of rules) {
     if (rule && typeof rule === 'object') {
       if (rule.default && !isValidDecision(rule.default)) {
-        warn(`[warden] Warning: invalid rule default "${rule.default}" for "${rule.command}", using "ask"\n`);
+        warn(`[warden] Warning: invalid rule default "${rule.default}" for "${rule[nameKey]}", using "ask"\n`);
         rule.default = 'ask';
       }
       if (Array.isArray(rule.argPatterns)) {
         for (const pattern of rule.argPatterns) {
           if (pattern?.decision && !isValidDecision(pattern.decision)) {
-            warn(`[warden] Warning: invalid pattern decision "${pattern.decision}" for "${rule.command}", using "ask"\n`);
+            warn(`[warden] Warning: invalid pattern decision "${pattern.decision}" for "${rule[nameKey]}", using "ask"\n`);
             pattern.decision = 'ask';
           }
         }
@@ -120,6 +131,14 @@ function extractLayer(raw: Record<string, unknown>): ConfigLayer {
     alwaysDeny: Array.isArray(raw.alwaysDeny) ? raw.alwaysDeny : [],
     rules,
   };
+}
+
+function extractSkillLayer(raw: Record<string, unknown>): SkillConfigLayer {
+  return extractGenericLayer(raw, 'skill') as SkillConfigLayer;
+}
+
+function extractLayer(raw: Record<string, unknown>): ConfigLayer {
+  return extractGenericLayer(raw, 'command') as ConfigLayer;
 }
 
 export function parseTrustedList(raw: unknown[]): TrustedTarget[] {
@@ -319,6 +338,18 @@ function mergeNonLayerFields(config: WardenConfig, raw: Record<string, unknown>)
   if (typeof raw.notifyOnDeny === 'boolean') {
     config.notifyOnDeny = raw.notifyOnDeny;
   }
+  // Skill-level defaultDecision from skills.defaultDecision
+  if (raw.skills && typeof raw.skills === 'object') {
+    const skills = raw.skills as Record<string, unknown>;
+    if (typeof skills.defaultDecision === 'string') {
+      if (isValidDecision(skills.defaultDecision)) {
+        config.skillRules.defaultDecision = skills.defaultDecision;
+      } else {
+        warn(`[warden] Warning: invalid skills.defaultDecision "${skills.defaultDecision}", ignoring\n`);
+      }
+    }
+  }
+
   if (raw.trustedContextOverrides && typeof raw.trustedContextOverrides === 'object') {
     const overrides = raw.trustedContextOverrides as Record<string, unknown>;
     const layer = extractLayer(overrides);

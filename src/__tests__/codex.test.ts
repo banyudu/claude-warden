@@ -9,6 +9,7 @@ function baseConfig(layers: WardenConfig['layers']): WardenConfig {
     askOnSubshell: true,
     notifyOnAsk: false,
     notifyOnDeny: true,
+    skillRules: { defaultDecision: 'ask', layers: [{ alwaysAllow: [], alwaysDeny: [], rules: [] }] },
   };
 }
 

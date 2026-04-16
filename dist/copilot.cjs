@@ -18888,6 +18888,22 @@ function pkgRunnerRule(command) {
     ]
   };
 }
+var DEFAULT_SKILL_RULES = {
+  defaultDecision: "ask",
+  layers: [{
+    alwaysAllow: [
+      "commit",
+      "review",
+      "simplify",
+      "init",
+      "commit-commands:commit",
+      "commit-commands:commit-push-pr",
+      "code-review:code-review"
+    ],
+    alwaysDeny: [],
+    rules: []
+  }]
+};
 var DEFAULT_CONFIG = {
   defaultDecision: "ask",
   askOnSubshell: true,
@@ -18895,6 +18911,7 @@ var DEFAULT_CONFIG = {
   notifyOnDeny: true,
   trustedRemotes: [],
   targetPolicies: [],
+  skillRules: DEFAULT_SKILL_RULES,
   layers: [{
     alwaysAllow: [
       // Read-only file operations
@@ -19522,6 +19539,14 @@ function loadConfig(cwd) {
     ...userLayer ? [userLayer] : [],
     defaultLayer
   ];
+  const defaultSkillLayer = config.skillRules.layers[0];
+  const userSkillLayer = userRaw?.skills ? extractSkillLayer(userRaw.skills) : null;
+  const workspaceSkillLayer = workspaceRaw?.skills ? extractSkillLayer(workspaceRaw.skills) : null;
+  config.skillRules.layers = [
+    ...workspaceSkillLayer ? [workspaceSkillLayer] : [],
+    ...userSkillLayer ? [userSkillLayer] : [],
+    defaultSkillLayer
+  ];
   if (userRaw) mergeNonLayerFields(config, userRaw);
   if (workspaceRaw) mergeNonLayerFields(config, workspaceRaw);
   return config;
@@ -19540,19 +19565,19 @@ function tryLoadFile(filePath) {
   }
   return null;
 }
-function extractLayer(raw) {
+function extractGenericLayer(raw, nameKey) {
   const rules = Array.isArray(raw.rules) ? raw.rules : [];
   for (const rule of rules) {
     if (rule && typeof rule === "object") {
       if (rule.default && !isValidDecision(rule.default)) {
-        warn(`[warden] Warning: invalid rule default "${rule.default}" for "${rule.command}", using "ask"
+        warn(`[warden] Warning: invalid rule default "${rule.default}" for "${rule[nameKey]}", using "ask"
 `);
         rule.default = "ask";
       }
       if (Array.isArray(rule.argPatterns)) {
         for (const pattern of rule.argPatterns) {
           if (pattern?.decision && !isValidDecision(pattern.decision)) {
-            warn(`[warden] Warning: invalid pattern decision "${pattern.decision}" for "${rule.command}", using "ask"
+            warn(`[warden] Warning: invalid pattern decision "${pattern.decision}" for "${rule[nameKey]}", using "ask"
 `);
             pattern.decision = "ask";
           }
@@ -19565,6 +19590,12 @@ function extractLayer(raw) {
     alwaysDeny: Array.isArray(raw.alwaysDeny) ? raw.alwaysDeny : [],
     rules
   };
+}
+function extractSkillLayer(raw) {
+  return extractGenericLayer(raw, "skill");
+}
+function extractLayer(raw) {
+  return extractGenericLayer(raw, "command");
 }
 function parseTrustedList(raw) {
   return raw.map((entry) => {
@@ -19745,6 +19776,17 @@ function mergeNonLayerFields(config, raw) {
   }
   if (typeof raw.notifyOnDeny === "boolean") {
     config.notifyOnDeny = raw.notifyOnDeny;
+  }
+  if (raw.skills && typeof raw.skills === "object") {
+    const skills = raw.skills;
+    if (typeof skills.defaultDecision === "string") {
+      if (isValidDecision(skills.defaultDecision)) {
+        config.skillRules.defaultDecision = skills.defaultDecision;
+      } else {
+        warn(`[warden] Warning: invalid skills.defaultDecision "${skills.defaultDecision}", ignoring
+`);
+      }
+    }
   }
   if (raw.trustedContextOverrides && typeof raw.trustedContextOverrides === "object") {
     const overrides = raw.trustedContextOverrides;

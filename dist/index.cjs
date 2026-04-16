@@ -18888,6 +18888,22 @@ function pkgRunnerRule(command) {
     ]
   };
 }
+var DEFAULT_SKILL_RULES = {
+  defaultDecision: "ask",
+  layers: [{
+    alwaysAllow: [
+      "commit",
+      "review",
+      "simplify",
+      "init",
+      "commit-commands:commit",
+      "commit-commands:commit-push-pr",
+      "code-review:code-review"
+    ],
+    alwaysDeny: [],
+    rules: []
+  }]
+};
 var DEFAULT_CONFIG = {
   defaultDecision: "ask",
   askOnSubshell: true,
@@ -18895,6 +18911,7 @@ var DEFAULT_CONFIG = {
   notifyOnDeny: true,
   trustedRemotes: [],
   targetPolicies: [],
+  skillRules: DEFAULT_SKILL_RULES,
   layers: [{
     alwaysAllow: [
       // Read-only file operations
@@ -19522,6 +19539,14 @@ function loadConfig(cwd) {
     ...userLayer ? [userLayer] : [],
     defaultLayer
   ];
+  const defaultSkillLayer = config.skillRules.layers[0];
+  const userSkillLayer = userRaw?.skills ? extractSkillLayer(userRaw.skills) : null;
+  const workspaceSkillLayer = workspaceRaw?.skills ? extractSkillLayer(workspaceRaw.skills) : null;
+  config.skillRules.layers = [
+    ...workspaceSkillLayer ? [workspaceSkillLayer] : [],
+    ...userSkillLayer ? [userSkillLayer] : [],
+    defaultSkillLayer
+  ];
   if (userRaw) mergeNonLayerFields(config, userRaw);
   if (workspaceRaw) mergeNonLayerFields(config, workspaceRaw);
   return config;
@@ -19540,19 +19565,19 @@ function tryLoadFile(filePath) {
   }
   return null;
 }
-function extractLayer(raw) {
+function extractGenericLayer(raw, nameKey) {
   const rules = Array.isArray(raw.rules) ? raw.rules : [];
   for (const rule of rules) {
     if (rule && typeof rule === "object") {
       if (rule.default && !isValidDecision(rule.default)) {
-        warn(`[warden] Warning: invalid rule default "${rule.default}" for "${rule.command}", using "ask"
+        warn(`[warden] Warning: invalid rule default "${rule.default}" for "${rule[nameKey]}", using "ask"
 `);
         rule.default = "ask";
       }
       if (Array.isArray(rule.argPatterns)) {
         for (const pattern of rule.argPatterns) {
           if (pattern?.decision && !isValidDecision(pattern.decision)) {
-            warn(`[warden] Warning: invalid pattern decision "${pattern.decision}" for "${rule.command}", using "ask"
+            warn(`[warden] Warning: invalid pattern decision "${pattern.decision}" for "${rule[nameKey]}", using "ask"
 `);
             pattern.decision = "ask";
           }
@@ -19565,6 +19590,12 @@ function extractLayer(raw) {
     alwaysDeny: Array.isArray(raw.alwaysDeny) ? raw.alwaysDeny : [],
     rules
   };
+}
+function extractSkillLayer(raw) {
+  return extractGenericLayer(raw, "skill");
+}
+function extractLayer(raw) {
+  return extractGenericLayer(raw, "command");
 }
 function parseTrustedList(raw) {
   return raw.map((entry) => {
@@ -19745,6 +19776,17 @@ function mergeNonLayerFields(config, raw) {
   }
   if (typeof raw.notifyOnDeny === "boolean") {
     config.notifyOnDeny = raw.notifyOnDeny;
+  }
+  if (raw.skills && typeof raw.skills === "object") {
+    const skills = raw.skills;
+    if (typeof skills.defaultDecision === "string") {
+      if (isValidDecision(skills.defaultDecision)) {
+        config.skillRules.defaultDecision = skills.defaultDecision;
+      } else {
+        warn(`[warden] Warning: invalid skills.defaultDecision "${skills.defaultDecision}", ignoring
+`);
+      }
+    }
   }
   if (raw.trustedContextOverrides && typeof raw.trustedContextOverrides === "object") {
     const overrides = raw.trustedContextOverrides;
@@ -20599,6 +20641,110 @@ function wardenEvalWithConfig(command, config, cwd) {
   return evaluate(parsed, config, cwd);
 }
 
+// src/skill-evaluator.ts
+function skillMatchesName(skillName, pattern) {
+  return globToRegex(pattern).test(skillName);
+}
+function evaluateSkill(skillName, args2, config) {
+  const detail = evaluateSkillDetail(skillName, args2, config);
+  return {
+    decision: detail.decision,
+    reason: detail.reason,
+    details: [detail]
+  };
+}
+function evaluateSkillDetail(skillName, args2, config) {
+  const { skillRules } = config;
+  for (const layer of skillRules.layers) {
+    if (layer.alwaysDeny.some((p) => skillMatchesName(skillName, p))) {
+      return {
+        command: skillName,
+        args: args2 ? [args2] : [],
+        decision: "deny",
+        reason: `Skill "${skillName}" is blocked`,
+        matchedRule: "alwaysDeny"
+      };
+    }
+    if (layer.alwaysAllow.some((p) => skillMatchesName(skillName, p))) {
+      return {
+        command: skillName,
+        args: args2 ? [args2] : [],
+        decision: "allow",
+        reason: `Skill "${skillName}" is safe`,
+        matchedRule: "alwaysAllow"
+      };
+    }
+  }
+  const mergedRule = collectMergedSkillRule(skillName, skillRules.layers.map((l) => l.rules));
+  if (mergedRule) {
+    return evaluateSkillRule(skillName, args2, mergedRule);
+  }
+  return {
+    command: skillName,
+    args: args2 ? [args2] : [],
+    decision: skillRules.defaultDecision,
+    reason: `No rule for skill "${skillName}"`,
+    matchedRule: "default"
+  };
+}
+function collectMergedSkillRule(skillName, layerRules) {
+  const matching = [];
+  for (const rules of layerRules) {
+    const rule = rules.find((r) => skillMatchesName(skillName, r.skill));
+    if (rule) {
+      matching.push(rule);
+      if (rule.override) break;
+    }
+  }
+  if (matching.length === 0) return null;
+  if (matching.length === 1) return matching[0];
+  const mergedPatterns = [];
+  for (const rule of matching) {
+    if (rule.argPatterns) {
+      mergedPatterns.push(...rule.argPatterns);
+    }
+  }
+  return {
+    skill: matching[0].skill,
+    default: matching[0].default,
+    argPatterns: mergedPatterns
+  };
+}
+function evaluateSkillRule(skillName, args2, rule) {
+  const argsArray = args2 ? [args2] : [];
+  const argsJoined = args2 || "";
+  for (const pattern of rule.argPatterns || []) {
+    const m = pattern.match;
+    let matched = true;
+    if (m.noArgs !== void 0) {
+      matched = matched && m.noArgs === !args2;
+    }
+    if (m.argsMatch && matched) {
+      matched = m.argsMatch.some((re) => safeRegexTest(re, argsJoined));
+    }
+    if (m.anyArgMatches && matched) {
+      matched = argsArray.some((arg) => m.anyArgMatches.some((re) => safeRegexTest(re, arg)));
+    }
+    if (m.not) matched = !matched;
+    if (matched) {
+      return {
+        command: skillName,
+        args: argsArray,
+        decision: pattern.decision,
+        reason: pattern.reason || pattern.description || `Matched pattern for skill "${skillName}"`,
+        matchedRule: `${skillName}:argPattern`
+      };
+    }
+  }
+  return {
+    command: skillName,
+    args: argsArray,
+    decision: rule.default,
+    reason: `Default for skill "${skillName}"`,
+    matchedRule: `${skillName}:default`
+  };
+}
+
 // src/suggest.ts
 function generateAllowSnippet(details) {
   const lines = [];
@@ -20799,20 +20945,35 @@ function deactivateYolo(sessionId) {
 
 // src/index.ts
 var MAX_STDIN_SIZE = 1024 * 1024;
+function emitDecision(decision, reason, stderrMessage) {
+  const output = {
+    hookSpecificOutput: {
+      hookEventName: "PreToolUse",
+      permissionDecision: decision,
+      permissionDecisionReason: reason
+    }
+  };
+  process.stdout.write(JSON.stringify(output));
+  if (decision === "deny") {
+    process.stderr.write(`${stderrMessage ?? reason}
+`);
+    process.exit(2);
+  }
+  process.exit(0);
+}
+function handleYoloMode(sessionId, result) {
+  const yoloState = getYoloState(sessionId);
+  if (!yoloState) return;
+  if (result.decision === "deny" && !yoloState.bypassDeny) return;
+  const expiryInfo = yoloState.expiresAt ? `expires ${new Date(yoloState.expiresAt).toLocaleTimeString()}` : "full session";
+  emitDecision("allow", `[warden] YOLO mode active (${expiryInfo})`);
+}
 async function main() {
   let raw = "";
   for await (const chunk of process.stdin) {
     raw += chunk;
     if (raw.length > MAX_STDIN_SIZE) {
-      const output2 = {
-        hookSpecificOutput: {
-          hookEventName: "PreToolUse",
-          permissionDecision: "ask",
-          permissionDecisionReason: "[warden] Input exceeds size limit"
-        }
-      };
-      process.stdout.write(JSON.stringify(output2));
-      process.exit(0);
+      emitDecision("ask", "[warden] Input exceeds size limit");
     }
   }
   let input;
@@ -20821,7 +20982,7 @@ async function main() {
   } catch {
     process.exit(0);
   }
-  if (input.tool_name !== "Bash") {
+  if (input.tool_name !== "Bash" && input.tool_name !== "Skill") {
     process.exit(0);
   }
   if (input.permission_mode === "bypassPermissions") {
@@ -20830,100 +20991,63 @@ async function main() {
   if (process.env.WARDEN_YOLO === "true" || process.env.WARDEN_YOLO === "1") {
     process.exit(0);
   }
+  if (input.tool_name === "Skill") {
+    const skillName = input.tool_input?.skill;
+    if (!skillName || typeof skillName !== "string") process.exit(0);
+    const args2 = typeof input.tool_input?.args === "string" ? input.tool_input.args : void 0;
+    const config2 = loadConfig(input.cwd);
+    const result2 = evaluateSkill(skillName, args2, config2);
+    handleYoloMode(input.session_id, result2);
+    emitResult(result2, `skill:${skillName}`, config2);
+  }
   const command = input.tool_input?.command;
   if (!command || typeof command !== "string") {
     process.exit(0);
   }
   const yoloCmd = parseYoloCommand(command);
   if (yoloCmd) {
-    let msg2;
+    let msg;
     if (yoloCmd.action === "activate") {
       const state = activateYolo(input.session_id, yoloCmd.durationMinutes);
       const expiryInfo = state.expiresAt ? `expires at ${new Date(state.expiresAt).toLocaleTimeString()}` : "full session, no expiry";
-      msg2 = `[warden] YOLO mode activated (${expiryInfo}). Always-deny commands are still blocked. Use \`echo __WARDEN_YOLO_DEACTIVATE__\` to turn off.`;
+      msg = `[warden] YOLO mode activated (${expiryInfo}). Always-deny commands are still blocked. Use \`echo __WARDEN_YOLO_DEACTIVATE__\` to turn off.`;
     } else if (yoloCmd.action === "deactivate") {
       deactivateYolo(input.session_id);
-      msg2 = "[warden] YOLO mode deactivated. Normal rule evaluation resumed.";
+      msg = "[warden] YOLO mode deactivated. Normal rule evaluation resumed.";
     } else {
       const state = getYoloState(input.session_id);
       if (state) {
         const expiryInfo = state.expiresAt ? `expires at ${new Date(state.expiresAt).toLocaleTimeString()}` : "full session";
-        msg2 = `[warden] YOLO mode is active (${expiryInfo})`;
+        msg = `[warden] YOLO mode is active (${expiryInfo})`;
       } else {
-        msg2 = "[warden] YOLO mode is not active";
+        msg = "[warden] YOLO mode is not active";
       }
     }
-    const output2 = {
-      hookSpecificOutput: {
-        hookEventName: "PreToolUse",
-        permissionDecision: "allow",
-        permissionDecisionReason: msg2
-      }
-    };
-    process.stdout.write(JSON.stringify(output2));
-    process.exit(0);
+    emitDecision("allow", msg);
   }
   const config = loadConfig(input.cwd);
   const result = wardenEvalWithConfig(command, config, input.cwd);
-  const yoloState = getYoloState(input.session_id);
-  if (yoloState) {
-    if (result.decision === "deny" && !yoloState.bypassDeny) {
-    } else {
-      const expiryInfo = yoloState.expiresAt ? `expires ${new Date(yoloState.expiresAt).toLocaleTimeString()}` : "full session";
-      const output2 = {
-        hookSpecificOutput: {
-          hookEventName: "PreToolUse",
-          permissionDecision: "allow",
-          permissionDecisionReason: `[warden] YOLO mode active (${expiryInfo})`
-        }
-      };
-      process.stdout.write(JSON.stringify(output2));
-      process.exit(0);
-    }
-  }
+  handleYoloMode(input.session_id, result);
+  emitResult(result, command, config);
+}
+function emitResult(result, label, config) {
   if (result.decision === "allow") {
-    const output2 = {
-      hookSpecificOutput: {
-        hookEventName: "PreToolUse",
-        permissionDecision: "allow",
-        permissionDecisionReason: `[warden] ${result.reason}`
-      }
-    };
-    process.stdout.write(JSON.stringify(output2));
-    process.exit(0);
+    emitDecision("allow", `[warden] ${result.reason}`);
   }
   if (result.decision === "deny") {
     if (config.notifyOnDeny) {
-      const truncated = command.length > 80 ? command.slice(0, 77) + "..." : command;
+      const truncated = label.length > 80 ? label.slice(0, 77) + "..." : label;
       sendNotification("Claude Warden", `Blocked: ${truncated}`, config);
     }
-    const msg2 = formatSystemMessage("deny", command, result.details);
-    const output2 = {
-      hookSpecificOutput: {
-        hookEventName: "PreToolUse",
-        permissionDecision: "deny",
-        permissionDecisionReason: msg2
-      }
-    };
-    process.stdout.write(JSON.stringify(output2));
-    process.stderr.write(`[warden] Blocked: ${result.reason}
-`);
-    process.exit(2);
+    const msg2 = formatSystemMessage("deny", label, result.details);
+    emitDecision("deny", msg2, `[warden] Blocked: ${result.reason}`);
   }
   if (config.notifyOnAsk) {
-    const truncated = command.length > 80 ? command.slice(0, 77) + "..." : command;
+    const truncated = label.length > 80 ? label.slice(0, 77) + "..." : label;
     sendNotification("Claude Warden", `Permission needed: ${truncated}`, config);
   }
-  const msg = formatSystemMessage("ask", command, result.details);
-  const output = {
-    hookSpecificOutput: {
-      hookEventName: "PreToolUse",
-      permissionDecision: "ask",
-      permissionDecisionReason: msg
-    }
-  };
-  process.stdout.write(JSON.stringify(output));
-  process.exit(0);
+  const msg = formatSystemMessage("ask", label, result.details);
+  emitDecision("ask", msg);
 }
 main().catch(() => process.exit(0));
 /*! Bundled license information:

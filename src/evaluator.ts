@@ -9,7 +9,7 @@ import { globToRegex } from './glob';
 import { warn } from './rules';
 
 /** Safely test a regex pattern, returning false on invalid patterns. */
-function safeRegexTest(pattern: string, input: string): boolean {
+export function safeRegexTest(pattern: string, input: string): boolean {
   try {
     return new RegExp(pattern).test(input);
   } catch {

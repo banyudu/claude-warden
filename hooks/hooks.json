@@ -1,9 +1,19 @@
 {
-  "description": "Smart command safety filter — evaluates Bash commands against configurable safety rules",
+  "description": "Smart command safety filter — evaluates Bash commands and Skill invocations against configurable safety rules",
   "hooks": {
     "PreToolUse": [
       {
         "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/dist/index.cjs",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Skill",
         "hooks": [
           {
             "type": "command",

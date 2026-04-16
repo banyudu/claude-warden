@@ -90,6 +90,24 @@ export interface EndpointPolicy extends TargetPolicyBase {
   pattern: string;
 }
 
+export interface SkillRule {
+  skill: string;
+  default: Decision;
+  argPatterns?: ArgPattern[];
+  override?: boolean;
+}
+
+export interface SkillConfigLayer {
+  alwaysAllow: string[];
+  alwaysDeny: string[];
+  rules: SkillRule[];
+}
+
+export interface SkillRulesConfig {
+  layers: SkillConfigLayer[];
+  defaultDecision: Decision;
+}
+
 export interface WardenConfig {
   layers: ConfigLayer[];
   trustedRemotes?: TrustedRemote[];
@@ -99,6 +117,7 @@ export interface WardenConfig {
   askOnSubshell: boolean;
   notifyOnAsk: boolean;
   notifyOnDeny: boolean;
+  skillRules: SkillRulesConfig;
 }
 
 export interface EvalResult {

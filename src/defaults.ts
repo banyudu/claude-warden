@@ -1,4 +1,4 @@
-import type { WardenConfig, CommandRule, ArgPattern } from './types';
+import type { WardenConfig, CommandRule, ArgPattern, SkillRulesConfig } from './types';
 
 // --- Shared patterns for Node.js ecosystem ---
 
@@ -91,6 +91,20 @@ function pkgRunnerRule(command: string): CommandRule {
   };
 }
 
+export const DEFAULT_SKILL_RULES: SkillRulesConfig = {
+  defaultDecision: 'ask',
+  layers: [{
+    alwaysAllow: [
+      'commit', 'review', 'simplify', 'init',
+      'commit-commands:commit',
+      'commit-commands:commit-push-pr',
+      'code-review:code-review',
+    ],
+    alwaysDeny: [],
+    rules: [],
+  }],
+};
+
 export const DEFAULT_CONFIG: WardenConfig = {
   defaultDecision: 'ask',
   askOnSubshell: true,
@@ -98,6 +112,7 @@ export const DEFAULT_CONFIG: WardenConfig = {
   notifyOnDeny: true,
   trustedRemotes: [],
   targetPolicies: [],
+  skillRules: DEFAULT_SKILL_RULES,
 
   layers: [{
     alwaysAllow: [
