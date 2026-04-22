@@ -18864,6 +18864,9 @@ function registryOpsPattern() {
     reason: "Registry modification"
   };
 }
+function inlineScriptReason(lang, ext) {
+  return `Inline ${lang} is hard to audit. For JSON, prefer \`jq\`. For reuse, save to scripts/*.${ext} and run it.`;
+}
 function pkgManagerRule(command, extraSafeCmds = []) {
   const safeCmds = [...SAFE_PKG_MANAGER_CMDS, ...extraSafeCmds];
   return {
@@ -19247,7 +19250,7 @@ var DEFAULT_CONFIG = {
         command: "node",
         default: "ask",
         argPatterns: [
-          { match: { anyArgMatches: ["^-e$", "^--eval", "^-p$", "^--print"] }, decision: "ask", reason: "Evaluating inline code" },
+          { match: { anyArgMatches: ["^-e$", "^--eval", "^-p$", "^--print"] }, decision: "ask", reason: inlineScriptReason("JavaScript", "js") },
           { match: { anyArgMatches: ["^--(version|help)$", "^-[vh]$"] }, decision: "allow", description: "Version/help flags" },
           { match: { noArgs: true }, decision: "ask", reason: "Interactive REPL" }
         ]
@@ -19276,6 +19279,7 @@ var DEFAULT_CONFIG = {
         command: cmd,
         default: "ask",
         argPatterns: [
+          { match: { anyArgMatches: ["^-c$"] }, decision: "ask", reason: inlineScriptReason("Python", "py") },
           { match: { anyArgMatches: ["^--(version|help)$", "^-V$"] }, decision: "allow" }
         ]
       })),
@@ -19434,14 +19438,18 @@ var DEFAULT_CONFIG = {
         argPatterns: [VERSION_HELP_FLAGS]
       })),
       // --- Scripting languages ---
-      ...["ruby", "perl", "php"].map((cmd) => ({
-        command: cmd,
-        default: "ask",
-        argPatterns: [
-          { match: { anyArgMatches: ["^-e$", "^--eval"] }, decision: "ask", reason: "Inline code execution" },
-          VERSION_HELP_FLAGS
-        ]
-      })),
+      { command: "ruby", default: "ask", argPatterns: [
+        { match: { anyArgMatches: ["^-e$", "^--eval"] }, decision: "ask", reason: inlineScriptReason("Ruby", "rb") },
+        VERSION_HELP_FLAGS
+      ] },
+      { command: "perl", default: "ask", argPatterns: [
+        { match: { anyArgMatches: ["^-e$", "^-E$"] }, decision: "ask", reason: inlineScriptReason("Perl", "pl") },
+        VERSION_HELP_FLAGS
+      ] },
+      { command: "php", default: "ask", argPatterns: [
+        { match: { anyArgMatches: ["^-r$"] }, decision: "ask", reason: inlineScriptReason("PHP", "php") },
+        VERSION_HELP_FLAGS
+      ] },
       // --- Java ecosystem ---
       { command: "java", default: "ask", argPatterns: [VERSION_HELP_FLAGS] },
       { command: "javac", default: "allow" },

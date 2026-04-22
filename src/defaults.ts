@@ -61,6 +61,18 @@ function registryOpsPattern(): ArgPattern {
   };
 }
 
+function inlineScriptReason(lang: string, ext: string): string {
+  return `Inline ${lang} is hard to audit. For JSON, prefer \`jq\`. For reuse, save to scripts/*.${ext} and run it.`;
+}
+
+function inlineExecPattern(lang: string, ext: string, flags: string[]): ArgPattern {
+  return {
+    match: { anyArgMatches: flags },
+    decision: 'ask',
+    reason: inlineScriptReason(lang, ext),
+  };
+}
+
 function pkgManagerRule(command: string, extraSafeCmds: string[] = []): CommandRule {
   const safeCmds = [...SAFE_PKG_MANAGER_CMDS, ...extraSafeCmds];
   return {
@@ -290,7 +302,7 @@ export const DEFAULT_CONFIG: WardenConfig = {
         command: 'node',
         default: 'ask',
         argPatterns: [
-          { match: { anyArgMatches: ['^-e$', '^--eval', '^-p$', '^--print'] }, decision: 'ask', reason: 'Evaluating inline code' },
+          inlineExecPattern('JavaScript', 'js', ['^-e$', '^--eval', '^-p$', '^--print']),
           { match: { anyArgMatches: ['^--(version|help)$', '^-[vh]$'] }, decision: 'allow', description: 'Version/help flags' },
           { match: { noArgs: true }, decision: 'ask', reason: 'Interactive REPL' },
         ],
@@ -320,6 +332,7 @@ export const DEFAULT_CONFIG: WardenConfig = {
         command: cmd,
         default: 'ask',
         argPatterns: [
+          inlineExecPattern('Python', 'py', ['^-c$']),
           { match: { anyArgMatches: ['^--(version|help)$', '^-V$'] }, decision: 'allow' },
         ],
       })),
@@ -489,14 +502,9 @@ export const DEFAULT_CONFIG: WardenConfig = {
       })),
 
       // --- Scripting languages ---
-      ...['ruby', 'perl', 'php'].map((cmd): CommandRule => ({
-        command: cmd,
-        default: 'ask',
-        argPatterns: [
-          { match: { anyArgMatches: ['^-e$', '^--eval'] }, decision: 'ask', reason: 'Inline code execution' },
-          VERSION_HELP_FLAGS,
-        ],
-      })),
+      { command: 'ruby', default: 'ask', argPatterns: [inlineExecPattern('Ruby', 'rb', ['^-e$', '^--eval']), VERSION_HELP_FLAGS] },
+      { command: 'perl', default: 'ask', argPatterns: [inlineExecPattern('Perl', 'pl', ['^-e$', '^-E$']),   VERSION_HELP_FLAGS] },
+      { command: 'php',  default: 'ask', argPatterns: [inlineExecPattern('PHP',  'php', ['^-r$']),          VERSION_HELP_FLAGS] },
 
       // --- Java ecosystem ---
       { command: 'java', default: 'ask', argPatterns: [VERSION_HELP_FLAGS] },

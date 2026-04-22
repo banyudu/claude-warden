@@ -233,6 +233,35 @@ describe('evaluator', () => {
     });
   });
 
+  describe('inline interpreter reasons', () => {
+    it.each([
+      ['python -c "print(1)"',     'Python',     'py'],
+      ['python3 -c "print(1)"',    'Python',     'py'],
+      ['node -e "console.log(1)"', 'JavaScript', 'js'],
+      ['node --eval "1+1"',        'JavaScript', 'js'],
+      ['node -p "1+1"',            'JavaScript', 'js'],
+      ['perl -e "print 1"',        'Perl',       'pl'],
+      ['ruby -e "puts 1"',         'Ruby',       'rb'],
+      ['php -r "echo 1;"',         'PHP',        'php'],
+    ])('asks with educational reason for %s', (cmd, lang, ext) => {
+      const r = eval_(cmd);
+      expect(r.decision).toBe('ask');
+      expect(r.reason).toContain('jq');
+      expect(r.reason).toContain(`scripts/*.${ext}`);
+      expect(r.reason).toContain(lang);
+    });
+
+    it('does NOT trigger inline nudge for python3 script.py', () => {
+      const r = eval_('python3 script.py');
+      expect(r.reason ?? '').not.toContain('jq');
+    });
+
+    it('does NOT trigger inline nudge for node script.js', () => {
+      const r = eval_('node script.js');
+      expect(r.reason ?? '').not.toContain('jq');
+    });
+  });
+
   describe('edge cases', () => {
     it('allows empty command', () => {
       expect(eval_('').decision).toBe('allow');
