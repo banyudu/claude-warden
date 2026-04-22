@@ -118,6 +118,18 @@ export interface WardenConfig {
   notifyOnAsk: boolean;
   notifyOnDeny: boolean;
   skillRules: SkillRulesConfig;
+  /**
+   * Text injected into every Claude Code session via the SessionStart hook.
+   * `string` — override the built-in guidance.
+   * `false` — disable injection entirely.
+   * `undefined` — use the built-in guidance (interpolated with `tempScriptDir`).
+   */
+  sessionGuidance?: string | false;
+  /**
+   * Directory the built-in guidance tells Claude to save throwaway multi-line
+   * scripts to. Defaults to `/tmp`. Only used when `sessionGuidance` is unset.
+   */
+  tempScriptDir?: string;
 }
 
 export interface EvalResult {
@@ -137,23 +149,30 @@ export interface CommandEvalDetail {
 export interface HookInput {
   session_id: string;
   hook_event_name: string;
-  tool_name: string;
-  tool_input: { command?: string; [key: string]: unknown };
+  /** Present for PreToolUse; absent for SessionStart and other events. */
+  tool_name?: string;
+  /** Present for PreToolUse; absent for SessionStart. */
+  tool_input?: { command?: string; [key: string]: unknown };
   cwd: string;
-  permission_mode:
+  /** PreToolUse-only; not sent for SessionStart. */
+  permission_mode?:
     | 'default'
     | 'plan'
     | 'acceptEdits'
     | 'auto'
     | 'dontAsk'
     | 'bypassPermissions';
+  /** SessionStart-only: reason the session is (re)starting. */
+  source?: 'startup' | 'resume' | 'clear' | 'compact';
 }
 
 export interface HookOutput {
   hookSpecificOutput?: {
     hookEventName: string;
-    permissionDecision: Decision;
-    permissionDecisionReason: string;
+    permissionDecision?: Decision;
+    permissionDecisionReason?: string;
+    /** SessionStart: text appended to the session as a system message. */
+    additionalContext?: string;
   };
   systemMessage?: string;
 }

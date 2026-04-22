@@ -19,6 +19,26 @@ askOnSubshell: true
 notifyOnAsk: true
 notifyOnDeny: true
 
+# Guidance injected into every Claude Code session via the SessionStart hook.
+# Claude sees this as a system message, so it can shape tool choice *before*
+# warden needs to ask or deny. Keep it short — it competes for context.
+#
+# - Omit the key to use the built-in default (prefer jq, save temp scripts to
+#   tempScriptDir below, read deny reasons, mention /warden:allow and /warden:yolo).
+# - Set to a string to override with your own guidance.
+# - Set to `false` to disable injection entirely.
+#
+# sessionGuidance: |
+#   Warden is active. Prefer allow-listed tools (e.g. jq for JSON). For
+#   multi-line logic, save a temp script under /tmp/ instead of using
+#   inline `bash -c` / `node -e`.
+
+# Directory the built-in guidance tells Claude to save throwaway multi-line
+# scripts to. Defaults to `/tmp` so scripts don't pollute the repo. Point at
+# another location (e.g. `.warden-scratch`) if you want them tracked per-project.
+# Only used when `sessionGuidance` is unset.
+# tempScriptDir: /tmp
+
 # Additional commands to always allow (checked after alwaysDeny within this scope)
 # alwaysAllow:
 #   - terraform

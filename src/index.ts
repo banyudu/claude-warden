@@ -4,6 +4,7 @@ import { evaluateSkill } from './skill-evaluator';
 import { formatSystemMessage } from './suggest';
 import { sendNotification } from './notify';
 import { getYoloState, activateYolo, deactivateYolo, parseYoloCommand } from './yolo';
+import { buildDefaultSessionGuidance, DEFAULT_TEMP_SCRIPT_DIR } from './defaults';
 import type { HookInput, HookOutput, EvalResult, WardenConfig, Decision } from './types';
 
 // Note: rules.ts defaults to quiet mode, which is what we want in a
@@ -26,6 +27,20 @@ function emitDecision(decision: Decision, reason: string, stderrMessage?: string
     process.stderr.write(`${stderrMessage ?? reason}\n`);
     process.exit(2);
   }
+  process.exit(0);
+}
+
+function handleSessionStart(config: WardenConfig): never {
+  if (config.sessionGuidance === false) process.exit(0);
+  const text = config.sessionGuidance
+    ?? buildDefaultSessionGuidance(config.tempScriptDir ?? DEFAULT_TEMP_SCRIPT_DIR);
+  const output: HookOutput = {
+    hookSpecificOutput: {
+      hookEventName: 'SessionStart',
+      additionalContext: text,
+    },
+  };
+  process.stdout.write(JSON.stringify(output));
   process.exit(0);
 }
 
@@ -54,6 +69,11 @@ async function main() {
   } catch {
     // Can't parse input — don't interfere
     process.exit(0);
+  }
+
+  if (input.hook_event_name === 'SessionStart') {
+    const config = loadConfig(input.cwd);
+    handleSessionStart(config);
   }
 
   if (input.tool_name !== 'Bash' && input.tool_name !== 'Skill') {

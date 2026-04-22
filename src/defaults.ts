@@ -142,6 +142,21 @@ export const DEFAULT_SKILL_RULES: SkillRulesConfig = {
   }],
 };
 
+export const DEFAULT_TEMP_SCRIPT_DIR = '/tmp';
+
+export function buildDefaultSessionGuidance(tempScriptDir: string): string {
+  return [
+    'Claude Warden is active. It filters Bash commands against safety rules and may ask or deny.',
+    '',
+    '- For JSON in shell pipelines, prefer `jq` (auto-allowed) over `python3 -c` / `node -e`.',
+    `- For multi-line logic, save a temp script under \`${tempScriptDir}/\` (e.g. \`${tempScriptDir}/warden-task.sh\`) or add a \`package.json\` script rather than inline \`bash -c\` / \`node -e\`. Avoid polluting the repo with throwaway scripts.`,
+    '- When Warden denies or asks, read the reason — it often names the preferred alternative.',
+    '- To permanently allow a specific command, run `/warden:allow <cmd>`. To temporarily bypass filtering, `/warden:yolo`.',
+  ].join('\n');
+}
+
+export const DEFAULT_SESSION_GUIDANCE = buildDefaultSessionGuidance(DEFAULT_TEMP_SCRIPT_DIR);
+
 export const DEFAULT_CONFIG: WardenConfig = {
   defaultDecision: 'ask',
   askOnSubshell: true,

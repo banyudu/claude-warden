@@ -18933,6 +18933,18 @@ var DEFAULT_SKILL_RULES = {
     rules: []
   }]
 };
+var DEFAULT_TEMP_SCRIPT_DIR = "/tmp";
+function buildDefaultSessionGuidance(tempScriptDir) {
+  return [
+    "Claude Warden is active. It filters Bash commands against safety rules and may ask or deny.",
+    "",
+    "- For JSON in shell pipelines, prefer `jq` (auto-allowed) over `python3 -c` / `node -e`.",
+    `- For multi-line logic, save a temp script under \`${tempScriptDir}/\` (e.g. \`${tempScriptDir}/warden-task.sh\`) or add a \`package.json\` script rather than inline \`bash -c\` / \`node -e\`. Avoid polluting the repo with throwaway scripts.`,
+    "- When Warden denies or asks, read the reason \u2014 it often names the preferred alternative.",
+    "- To permanently allow a specific command, run `/warden:allow <cmd>`. To temporarily bypass filtering, `/warden:yolo`."
+  ].join("\n");
+}
+var DEFAULT_SESSION_GUIDANCE = buildDefaultSessionGuidance(DEFAULT_TEMP_SCRIPT_DIR);
 var DEFAULT_CONFIG = {
   defaultDecision: "ask",
   askOnSubshell: true,
@@ -19805,6 +19817,18 @@ function mergeNonLayerFields(config, raw) {
   }
   if (typeof raw.notifyOnDeny === "boolean") {
     config.notifyOnDeny = raw.notifyOnDeny;
+  }
+  if (typeof raw.sessionGuidance === "string" || raw.sessionGuidance === false) {
+    config.sessionGuidance = raw.sessionGuidance;
+  } else if (raw.sessionGuidance !== void 0) {
+    warn(`[warden] Warning: invalid sessionGuidance (expected string or false), ignoring
+`);
+  }
+  if (typeof raw.tempScriptDir === "string" && raw.tempScriptDir.length > 0) {
+    config.tempScriptDir = raw.tempScriptDir;
+  } else if (raw.tempScriptDir !== void 0) {
+    warn(`[warden] Warning: invalid tempScriptDir (expected non-empty string), ignoring
+`);
   }
   if (raw.skills && typeof raw.skills === "object") {
     const skills = raw.skills;
@@ -20990,6 +21014,18 @@ function emitDecision(decision, reason, stderrMessage) {
   }
   process.exit(0);
 }
+function handleSessionStart(config) {
+  if (config.sessionGuidance === false) process.exit(0);
+  const text = config.sessionGuidance ?? buildDefaultSessionGuidance(config.tempScriptDir ?? DEFAULT_TEMP_SCRIPT_DIR);
+  const output = {
+    hookSpecificOutput: {
+      hookEventName: "SessionStart",
+      additionalContext: text
+    }
+  };
+  process.stdout.write(JSON.stringify(output));
+  process.exit(0);
+}
 function handleYoloMode(sessionId, result) {
   const yoloState = getYoloState(sessionId);
   if (!yoloState) return;
@@ -21010,6 +21046,10 @@ async function main() {
     input = JSON.parse(raw);
   } catch {
     process.exit(0);
+  }
+  if (input.hook_event_name === "SessionStart") {
+    const config2 = loadConfig(input.cwd);
+    handleSessionStart(config2);
   }
   if (input.tool_name !== "Bash" && input.tool_name !== "Skill") {
     process.exit(0);
