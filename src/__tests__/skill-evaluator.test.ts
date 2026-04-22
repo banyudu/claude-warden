@@ -101,10 +101,10 @@ describe('evaluateSkill', () => {
     it('matches glob patterns in alwaysAllow', () => {
       const config = configWith({
         defaultDecision: 'ask',
-        layers: [{ alwaysAllow: ['bd:*'], alwaysDeny: [], rules: [] }],
+        layers: [{ alwaysAllow: ['example-plugin:*'], alwaysDeny: [], rules: [] }],
       });
-      expect(evaluateSkill('bd:commit', undefined, config).decision).toBe('allow');
-      expect(evaluateSkill('bd:worktree', undefined, config).decision).toBe('allow');
+      expect(evaluateSkill('example-plugin:commit', undefined, config).decision).toBe('allow');
+      expect(evaluateSkill('example-plugin:worktree', undefined, config).decision).toBe('allow');
       expect(evaluateSkill('other:thing', undefined, config).decision).toBe('ask');
     });
 
@@ -122,10 +122,10 @@ describe('evaluateSkill', () => {
         layers: [{
           alwaysAllow: [],
           alwaysDeny: [],
-          rules: [{ skill: 'bd:*', default: 'allow' }],
+          rules: [{ skill: 'example-plugin:*', default: 'allow' }],
         }],
       });
-      expect(evaluateSkill('bd:commit', undefined, config).decision).toBe('allow');
+      expect(evaluateSkill('example-plugin:commit', undefined, config).decision).toBe('allow');
     });
   });
 

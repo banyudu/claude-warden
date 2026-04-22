@@ -178,7 +178,7 @@ notifyOnDeny: true
 
 # Skill (slash command) rules — filter Claude Code skill invocations.
 # Skill names use the short form (e.g. "commit", not "/commit").
-# Glob patterns supported for namespace matching (e.g. "bd:*").
+# Glob patterns supported for namespace matching (e.g. "example-plugin:*").
 # Built-in defaults auto-allow common safe skills (commit, review, simplify, init).
 # skills:
 #   defaultDecision: ask
@@ -186,7 +186,7 @@ notifyOnDeny: true
 #     - commit
 #     - review
 #     - simplify
-#     - "bd:*"
+#     - "example-plugin:*"
 #   alwaysDeny:
 #     - deploy
 #   rules:
