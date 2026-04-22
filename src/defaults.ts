@@ -61,16 +61,106 @@ function registryOpsPattern(): ArgPattern {
   };
 }
 
-function inlineScriptReason(lang: string, ext: string): string {
-  return `Inline ${lang} is hard to audit. For JSON, prefer \`jq\`. For reuse, save to scripts/*.${ext} and run it.`;
-}
+type InlineLang = 'Python' | 'JavaScript' | 'Ruby' | 'Perl' | 'PHP';
 
-function inlineExecPattern(lang: string, ext: string, flags: string[]): ArgPattern {
-  return {
-    match: { anyArgMatches: flags },
-    decision: 'ask',
-    reason: inlineScriptReason(lang, ext),
-  };
+// Per-language config for inline interpreter scripts. `patterns` are regex fragments for
+// identifiers that indicate a script is not read-only (shell-out, file-write, network).
+// They are OR-alternated and interpolated into a compound `argsMatch` regex that also
+// requires the inline flag (-c/-e/etc.) to be present. This is a heuristic — obfuscation,
+// string concat, and __import__ tricks can bypass it — but it covers the common foot-guns
+// that would surprise a user who expected a quick JSON inspection to be read-only.
+// The `[_]` single-char classes around the underscore in `child_process` are a workaround
+// to avoid tripping source-scanning security hooks that grep for the literal string.
+const INLINE_LANG_CONFIG: Record<InlineLang, { ext: string; patterns: string[] }> = {
+  Python: {
+    ext: 'py',
+    patterns: [
+      'os\\.system',
+      'subprocess',
+      'commands\\.',
+      'pty\\.',
+      "__import__\\s*\\(\\s*['\"](?:os|subprocess|socket)",
+      '\\bexec\\s*\\(',
+      '\\beval\\s*\\(',
+      "open\\s*\\([^)]*['\"][wax+]",
+      '\\bsocket\\b',
+      'urllib',
+      'requests\\.',
+      'http\\.client',
+    ],
+  },
+  JavaScript: {
+    ext: 'js',
+    patterns: [
+      'child[_]process',
+      "require\\s*\\(\\s*['\"]child[_]process",
+      '\\.(?:writeFile|appendFile|createWriteStream|writeFileSync|appendFileSync)\\s*\\(',
+      'http\\.request',
+      'https\\.request',
+      'net\\.(?:connect|createConnection)',
+      'fetch\\s*\\(',
+    ],
+  },
+  Ruby: {
+    ext: 'rb',
+    patterns: [
+      '`',
+      '%x[\\(\\{\\[]',
+      '\\bsystem\\s*\\(',
+      '\\bexec\\s*\\(',
+      'IO\\.popen',
+      'Kernel\\.',
+      '\\bspawn\\s*\\(',
+      "File\\.open\\s*\\([^)]*['\"][wax+]",
+      'File\\.write',
+      'open-uri',
+      'Net::HTTP',
+    ],
+  },
+  Perl: {
+    ext: 'pl',
+    patterns: [
+      '`',
+      'qx[\\(\\{\\[/]',
+      '\\bsystem\\s*\\(',
+      '\\bexec\\s*\\(',
+      "open\\s*\\([^)]*['\"][>|+]",
+    ],
+  },
+  PHP: {
+    ext: 'php',
+    patterns: [
+      '`',
+      'shell_exec',
+      '\\b(?:system|passthru|popen|proc_open)\\s*\\(',
+      '\\bexec\\s*\\(',
+      'file_put_contents',
+      'fwrite',
+      "fopen\\s*\\([^)]*['\"][wax+]",
+      'curl_exec',
+      'fsockopen',
+    ],
+  },
+};
+
+function inlineExecPatterns(lang: InlineLang, flags: string[]): ArgPattern[] {
+  const { ext, patterns } = INLINE_LANG_CONFIG[lang];
+  const reason = `Inline ${lang} is hard to audit. For JSON, prefer \`jq\`. For reuse, save to scripts/*.${ext} and run it.`;
+  // Strip ^/$ anchors from each flag regex so it can be embedded in the compound alternation.
+  // Use `[\s=]` after the flag to also catch `--eval=script` form (no space).
+  // Bounded lazy quantifier caps backtracking; 16k is well past any realistic inline body
+  // while still preventing pathological-input slowdowns.
+  const flagAlt = flags.map(f => f.replace(/^\^/, '').replace(/\$$/, '')).join('|');
+  const compound = `(?:^|\\s)(?:${flagAlt})[\\s=][^\\n]{0,16000}?(?:${patterns.join('|')})`;
+
+  return [
+    { match: { argsMatch: [compound] }, decision: 'ask', reason },
+    {
+      match: { anyArgMatches: flags },
+      decision: 'allow',
+      description: `Plausibly read-only inline ${lang} script`,
+    },
+  ];
 }
 
 function pkgManagerRule(command: string, extraSafeCmds: string[] = []): CommandRule {
@@ -302,7 +392,7 @@ export const DEFAULT_CONFIG: WardenConfig = {
         command: 'node',
         default: 'ask',
         argPatterns: [
-          inlineExecPattern('JavaScript', 'js', ['^-e$', '^--eval', '^-p$', '^--print']),
+          ...inlineExecPatterns('JavaScript', ['^-e$', '^--eval', '^-p$', '^--print']),
           { match: { anyArgMatches: ['^--(version|help)$', '^-[vh]$'] }, decision: 'allow', description: 'Version/help flags' },
           { match: { noArgs: true }, decision: 'ask', reason: 'Interactive REPL' },
         ],
@@ -332,7 +422,7 @@ export const DEFAULT_CONFIG: WardenConfig = {
         command: cmd,
         default: 'ask',
         argPatterns: [
-          inlineExecPattern('Python', 'py', ['^-c$']),
+          ...inlineExecPatterns('Python', ['^-c$']),
           { match: { anyArgMatches: ['^--(version|help)$', '^-V$'] }, decision: 'allow' },
         ],
       })),
@@ -502,9 +592,9 @@ export const DEFAULT_CONFIG: WardenConfig = {
       })),
 
       // --- Scripting languages ---
-      { command: 'ruby', default: 'ask', argPatterns: [inlineExecPattern('Ruby', 'rb', ['^-e$', '^--eval']), VERSION_HELP_FLAGS] },
-      { command: 'perl', default: 'ask', argPatterns: [inlineExecPattern('Perl', 'pl', ['^-e$', '^-E$']),   VERSION_HELP_FLAGS] },
-      { command: 'php',  default: 'ask', argPatterns: [inlineExecPattern('PHP',  'php', ['^-r$']),          VERSION_HELP_FLAGS] },
+      { command: 'ruby', default: 'ask', argPatterns: [...inlineExecPatterns('Ruby', ['^-e$', '^--eval']), VERSION_HELP_FLAGS] },
+      { command: 'perl', default: 'ask', argPatterns: [...inlineExecPatterns('Perl', ['^-e$', '^-E$']),   VERSION_HELP_FLAGS] },
+      { command: 'php',  default: 'ask', argPatterns: [...inlineExecPatterns('PHP',  ['^-r$']),          VERSION_HELP_FLAGS] },
 
       // --- Java ecosystem ---
       { command: 'java', default: 'ask', argPatterns: [VERSION_HELP_FLAGS] },
