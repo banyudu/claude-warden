@@ -18892,13 +18892,42 @@ var DEFAULT_SKILL_RULES = {
   defaultDecision: "ask",
   layers: [{
     alwaysAllow: [
-      "commit",
+      // Built-in review/analysis skills
       "review",
-      "simplify",
-      "init",
-      "commit-commands:commit",
-      "commit-commands:commit-push-pr",
-      "code-review:code-review"
+      "security-review",
+      // Code review plugins
+      "code-review:code-review",
+      "pr-review-toolkit:review-pr",
+      // Slack read-only skills
+      "slack:find-discussions",
+      "slack:summarize-channel",
+      "slack:channel-digest",
+      "slack:standup",
+      "slack:draft-announcement",
+      "slack:slack-messaging",
+      "slack:slack-search",
+      // Search/summarization
+      "promptfolio-summarize",
+      "promptfolio-search-skills",
+      "promptfolio-search-people",
+      // Informational/guidance skills
+      "keybindings-help",
+      "claude-api",
+      "azure-tools:azure-usage",
+      "gcloud-tools:gcloud-usage",
+      "linear-tools:linear-usage",
+      "tavily-tools:tavily-usage",
+      "mongodb-tools:mongodb-usage",
+      "supabase-tools:supabase-usage",
+      "playwright-tools:playwright-testing",
+      // Plugin development guidance (read-only context loading)
+      "plugin-dev:agent-development",
+      "plugin-dev:mcp-integration",
+      "plugin-dev:skill-development",
+      "plugin-dev:plugin-settings",
+      "plugin-dev:command-development",
+      "plugin-dev:plugin-structure",
+      "plugin-dev:hook-development"
     ],
     alwaysDeny: [],
     rules: []
