@@ -6,7 +6,7 @@
 [![GitHub stars](https://img.shields.io/github/stars/banyudu/claude-warden)](https://github.com/banyudu/claude-warden/stargazers)
 [![CI](https://img.shields.io/github/actions/workflow/status/banyudu/claude-warden/ci.yml?label=CI)](https://github.com/banyudu/claude-warden/actions)
 
-Smart command safety filter for [Claude Code](https://claude.ai/code), [GitHub Copilot CLI](https://docs.github.com/en/copilot/how-tos/customize-copilot-cli/use-hooks), and other AI coding agents. Parses shell commands, evaluates each against configurable safety rules, and returns allow/deny/ask decisions — eliminating unnecessary permission prompts while blocking dangerous commands.
+Smart command safety filter for [Claude Code](https://claude.ai/code), [OpenAI Codex CLI](https://developers.openai.com/codex/hooks), [GitHub Copilot CLI](https://docs.github.com/en/copilot/how-tos/customize-copilot-cli/use-hooks), and other AI coding agents. Parses shell commands, evaluates each against configurable safety rules, and returns allow/deny/ask decisions — eliminating unnecessary permission prompts while blocking dangerous commands.
 
 ## The problem
 
@@ -283,7 +283,68 @@ rules:
           anyArgMatches: ['^(ps|images|logs)$']
         decision: allow
         description: Read-only docker commands
+
+# Skill (slash command) filtering — gate Claude Code skill invocations.
+# Skill names use the short form ("commit", not "/commit"). Glob patterns
+# are supported so you can whitelist an entire plugin namespace.
+skills:
+  defaultDecision: ask
+  alwaysAllow:
+    - commit
+    - review
+    - simplify
+    - "plugin-dev:*"      # allow every skill in the "plugin-dev" plugin
+  alwaysDeny:
+    - deploy
+  rules:
+    - skill: release
+      default: ask
+      argPatterns:
+        - match:
+            argsMatch: ["--dry-run"]
+          decision: allow
+          description: Dry-run release is safe
 ```
+
+## Skill (slash command) filtering
+
+Warden also intercepts Claude Code's `Skill` tool (the mechanism behind `/slash-command` invocations) using the same layered rule engine as shell commands. This lets you whitelist safe skills (read-only helpers, code review, summarization) while still prompting for anything that could modify state.
+
+Skill names are the identifier Claude Code uses internally — **without the leading `/`**. Built-in skills use a bare name (`commit`, `review`), plugin skills use `<plugin>:<skill>` (e.g. `plugin-dev:agent-development`, `code-review:code-review`). Glob patterns `*`, `?`, `[...]`, `{a,b,c}` are supported, so `"plugin-dev:*"` matches every skill in that plugin.
+
+### Configure
+
+```yaml
+skills:
+  # Default for skills with no matching rule: allow | deny | ask
+  defaultDecision: ask
+
+  # Auto-allow these skills (scoped to this config layer)
+  alwaysAllow:
+    - commit
+    - review
+    - "plugin-dev:*"
+
+  # Auto-deny these skills
+  alwaysDeny:
+    - deploy
+
+  # Per-skill rules with argument-aware matching
+  rules:
+    - skill: release
+      default: ask
+      argPatterns:
+        - match:
+            argsMatch: ["--dry-run"]
+          decision: allow
+          description: Dry-run release is safe
+```
+
+Layering follows the same **project > user > default** priority as shell rules (see [Config priority](#config-priority-scoped-layers)).
+
+### Built-in skill defaults
+
+Warden ships with a curated allow-list of skills that are read-only or informational — review tools (`review`, `security-review`, `code-review:code-review`), search/summarization helpers (`promptfolio-*`, `slack:find-discussions`, `slack:summarize-channel`), plugin-development guidance (`plugin-dev:*-development`), and `*-usage` docs skills. Everything else falls through to `defaultDecision: ask`.
 
 ## YOLO mode
 
