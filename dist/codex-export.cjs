@@ -18864,8 +18864,90 @@ function registryOpsPattern() {
     reason: "Registry modification"
   };
 }
-function inlineScriptReason(lang, ext) {
-  return `Inline ${lang} is hard to audit. For JSON, prefer \`jq\`. For reuse, save to scripts/*.${ext} and run it.`;
+var INLINE_LANG_CONFIG = {
+  Python: {
+    ext: "py",
+    patterns: [
+      "os\\.system",
+      "subprocess",
+      "commands\\.",
+      "pty\\.",
+      `__import__\\s*\\(\\s*['"](?:os|subprocess|socket)`,
+      "\\bexec\\s*\\(",
+      "\\beval\\s*\\(",
+      `open\\s*\\([^)]*['"][wax+]`,
+      "\\bsocket\\b",
+      "urllib",
+      "requests\\.",
+      "http\\.client"
+    ]
+  },
+  JavaScript: {
+    ext: "js",
+    patterns: [
+      "child[_]process",
+      `require\\s*\\(\\s*['"]child[_]process`,
+      "\\.(?:writeFile|appendFile|createWriteStream|writeFileSync|appendFileSync)\\s*\\(",
+      "http\\.request",
+      "https\\.request",
+      "net\\.(?:connect|createConnection)",
+      "fetch\\s*\\("
+    ]
+  },
+  Ruby: {
+    ext: "rb",
+    patterns: [
+      "`",
+      "%x[\\(\\{\\[]",
+      "\\bsystem\\s*\\(",
+      "\\bexec\\s*\\(",
+      "IO\\.popen",
+      "Kernel\\.",
+      "\\bspawn\\s*\\(",
+      `File\\.open\\s*\\([^)]*['"][wax+]`,
+      "File\\.write",
+      "open-uri",
+      "Net::HTTP"
+    ]
+  },
+  Perl: {
+    ext: "pl",
+    patterns: [
+      "`",
+      "qx[\\(\\{\\[/]",
+      "\\bsystem\\s*\\(",
+      "\\bexec\\s*\\(",
+      `open\\s*\\([^)]*['"][>|+]`
+    ]
+  },
+  PHP: {
+    ext: "php",
+    patterns: [
+      "`",
+      "shell_exec",
+      "\\b(?:system|passthru|popen|proc_open)\\s*\\(",
+      "\\bexec\\s*\\(",
+      "file_put_contents",
+      "fwrite",
+      `fopen\\s*\\([^)]*['"][wax+]`,
+      "curl_exec",
+      "fsockopen"
+    ]
+  }
+};
+function inlineExecPatterns(lang, flags) {
+  const { ext, patterns } = INLINE_LANG_CONFIG[lang];
+  const reason = `Inline ${lang} is hard to audit. For JSON, prefer \`jq\`. For reuse, save to scripts/*.${ext} and run it.`;
+  const flagAlt = flags.map((f) => f.replace(/^\^/, "").replace(/\$$/, "")).join("|");
+  const compound = `(?:^|\\s)(?:${flagAlt})[\\s=][^\\n]{0,16000}?(?:${patterns.join("|")})`;
+  return [
+    { match: { argsMatch: [compound] }, decision: "ask", reason },
+    {
+      match: { anyArgMatches: flags },
+      decision: "allow",
+      description: `Plausibly read-only inline ${lang} script`
+    }
+  ];
 }
 function pkgManagerRule(command, extraSafeCmds = []) {
   const safeCmds = [...SAFE_PKG_MANAGER_CMDS, ...extraSafeCmds];
@@ -19250,7 +19332,7 @@ var DEFAULT_CONFIG = {
         command: "node",
         default: "ask",
         argPatterns: [
-          { match: { anyArgMatches: ["^-e$", "^--eval", "^-p$", "^--print"] }, decision: "ask", reason: inlineScriptReason("JavaScript", "js") },
+          ...inlineExecPatterns("JavaScript", ["^-e$", "^--eval", "^-p$", "^--print"]),
           { match: { anyArgMatches: ["^--(version|help)$", "^-[vh]$"] }, decision: "allow", description: "Version/help flags" },
           { match: { noArgs: true }, decision: "ask", reason: "Interactive REPL" }
         ]
@@ -19279,7 +19361,7 @@ var DEFAULT_CONFIG = {
         command: cmd,
         default: "ask",
         argPatterns: [
-          { match: { anyArgMatches: ["^-c$"] }, decision: "ask", reason: inlineScriptReason("Python", "py") },
+          ...inlineExecPatterns("Python", ["^-c$"]),
           { match: { anyArgMatches: ["^--(version|help)$", "^-V$"] }, decision: "allow" }
         ]
       })),
@@ -19438,18 +19520,9 @@ var DEFAULT_CONFIG = {
         argPatterns: [VERSION_HELP_FLAGS]
       })),
       // --- Scripting languages ---
-      { command: "ruby", default: "ask", argPatterns: [
-        { match: { anyArgMatches: ["^-e$", "^--eval"] }, decision: "ask", reason: inlineScriptReason("Ruby", "rb") },
-        VERSION_HELP_FLAGS
-      ] },
-      { command: "perl", default: "ask", argPatterns: [
-        { match: { anyArgMatches: ["^-e$", "^-E$"] }, decision: "ask", reason: inlineScriptReason("Perl", "pl") },
-        VERSION_HELP_FLAGS
-      ] },
-      { command: "php", default: "ask", argPatterns: [
-        { match: { anyArgMatches: ["^-r$"] }, decision: "ask", reason: inlineScriptReason("PHP", "php") },
-        VERSION_HELP_FLAGS
-      ] },
+      { command: "ruby", default: "ask", argPatterns: [...inlineExecPatterns("Ruby", ["^-e$", "^--eval"]), VERSION_HELP_FLAGS] },
+      { command: "perl", default: "ask", argPatterns: [...inlineExecPatterns("Perl", ["^-e$", "^-E$"]), VERSION_HELP_FLAGS] },
+      { command: "php", default: "ask", argPatterns: [...inlineExecPatterns("PHP", ["^-r$"]), VERSION_HELP_FLAGS] },
       // --- Java ecosystem ---
       { command: "java", default: "ask", argPatterns: [VERSION_HELP_FLAGS] },
       { command: "javac", default: "allow" },
