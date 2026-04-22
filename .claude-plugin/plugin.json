@@ -1,6 +1,6 @@
 {
   "name": "warden",
-  "version": "2.8.0",
+  "version": "2.8.1",
   "description": "Smart command safety filter for Claude Code — parses shell pipelines and evaluates per-command safety rules to auto-approve safe commands and block dangerous ones",
   "author": {
     "name": "banyudu"
