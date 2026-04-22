@@ -7,6 +7,12 @@ user_invocable: true
 
 When invoked, perform a versioned release of claude-warden with changelog updates and a GitHub release.
 
+## Constraints
+
+- **Shell tooling**: don't use `grep` or `find -name` in Bash — the repo's own `enforce_rg_over_grep.py` PreToolUse hook blocks them. Use `rg` (ripgrep), `rg --files -g <pattern>`, or the Grep/Glob tools. Avoid the strings `grep` / `find -name` even in commit messages, since the hook matches on the command string.
+- **`main` is protected**: direct `git push origin main` is rejected. Every change (including the version bump) must land via a release branch + PR.
+- **Publishing is CI-driven**: the `auto-release.yml` workflow creates the tag, GitHub release, and npm publish once a `chore: release v<version>` commit lands on `main`. Do **not** run `pnpm publish` / `npm publish` locally, and don't create the GitHub release by hand — that races with CI and can leave the package half-published.
+
 ## Steps
 
 ### 1. Sync with remote
@@ -85,3 +91,12 @@ Since `main` has branch protection, push via a release branch:
 ### 7. Report
 
 Tell the user the PR is created. Once merged, the release will be published automatically.
+
+After merge, you can optionally watch the release workflows:
+
+```
+gh run list --workflow=auto-release.yml --limit 1
+gh run list --workflow=publish.yml --limit 1
+```
+
+If `publish.yml` fails, consult `CLAUDE.md` → "Publish workflow gotchas" (trusted-publisher OIDC needs `npx -y npm@11.5.1 publish`; re-running requires `gh release delete vX.Y.Z --yes --cleanup-tag`).
