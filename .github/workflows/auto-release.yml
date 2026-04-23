@@ -45,3 +45,4 @@ jobs:
           git tag "$VERSION"
           git push origin "$VERSION"
           gh release create "$VERSION" --title "$VERSION" --notes "$RELEASE_NOTES"
+          gh workflow run publish.yml -f tag="$VERSION"
