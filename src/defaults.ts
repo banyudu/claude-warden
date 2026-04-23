@@ -3,7 +3,7 @@ import type { WardenConfig, CommandRule, ArgPattern, SkillRulesConfig } from './
 // --- Shared patterns for Node.js ecosystem ---
 
 const SAFE_DEV_TOOLS = [
-  'jest', 'vitest', 'tsc', 'eslint', 'prettier', 'mkdirp', 'concurrently',
+  'jest', 'vitest', 'tsc', 'tsgo', 'eslint', 'prettier', 'mkdirp', 'concurrently',
   'turbo', 'next', 'nuxt', 'vite', 'astro', 'playwright', 'cypress',
   'mocha', 'nyc', 'c8', 'ts-jest', 'tsup', 'esbuild', 'rollup', 'webpack',
   'prisma', 'drizzle-kit', 'typeorm', 'knex', 'sequelize-cli',
@@ -474,6 +474,7 @@ export const DEFAULT_CONFIG: WardenConfig = {
       },
       { command: 'rustup', default: 'allow' },
       { command: 'tsc', default: 'allow' },
+      { command: 'tsgo', default: 'allow' },
       { command: 'turbo', default: 'allow' },
       { command: 'nx', default: 'allow' },
       { command: 'lerna', default: 'allow' },
