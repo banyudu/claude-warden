@@ -68,13 +68,15 @@ export function formatSystemMessage(
   decision: 'deny' | 'ask',
   rawCommand: string,
   details: CommandEvalDetail[],
+  fallbackReason?: string,
 ): string {
   const relevant = details.filter(d => d.decision !== 'allow');
 
   // Compact format for ask decisions
   if (decision === 'ask') {
     const parts = relevant.map(d => `\`${d.command}\`: ${d.reason}`);
-    const header = `[warden] ${parts.join(' | ')}`;
+    const body = parts.length > 0 ? parts.join(' | ') : (fallbackReason || '');
+    const header = `[warden] ${body}`;
 
     // Check if any flagged command has args that could be a sub-command
     const subcommandHints = relevant

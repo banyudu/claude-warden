@@ -209,6 +209,22 @@ describe('evaluator', () => {
     it('asks for $(unknown-command)', () => {
       expect(eval_('echo $(unknown-sketchy-tool)').decision).toBe('ask');
     });
+
+    it('allows explicit (...) subshell when all inner commands are safe', () => {
+      expect(eval_('(cd /tmp && ls)').decision).toBe('allow');
+    });
+
+    it('allows explicit (...) subshell with pipes when all inner commands are safe', () => {
+      expect(eval_('(cd /tmp && echo hi | head -5)').decision).toBe('allow');
+    });
+
+    it('denies explicit (...) subshell containing a dangerous command', () => {
+      expect(eval_('(cd /tmp && sudo apt install foo)').decision).toBe('deny');
+    });
+
+    it('asks for explicit (...) subshell containing an unknown command', () => {
+      expect(eval_('(echo hi && unknown-sketchy-tool)').decision).toBe('ask');
+    });
   });
 
   describe('heredocs', () => {

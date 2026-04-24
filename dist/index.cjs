@@ -18280,7 +18280,6 @@ function walkNode(node, result) {
       break;
     }
     case "Subshell": {
-      result.hasSubshell = true;
       const subshell = node;
       if (subshell.list?.commands) {
         for (const cmd of subshell.list.commands) {
@@ -19519,7 +19518,18 @@ var DEFAULT_CONFIG = {
       })),
       // --- Scripting languages ---
       { command: "ruby", default: "ask", argPatterns: [...inlineExecPatterns("Ruby", ["^-e$", "^--eval"]), VERSION_HELP_FLAGS] },
-      { command: "perl", default: "ask", argPatterns: [...inlineExecPatterns("Perl", ["^-e$", "^-E$"]), VERSION_HELP_FLAGS] },
+      // `[npa]` bundles perl's common read-only short flags (`-pe`, `-ne`, `-ane`).
+      // `-i` (in-place edit) mutates files — detected separately so it's caught whether
+      // bundled (`-pie`, `-pi`) or passed as its own arg (`-i -pe`, `-i.bak -pe`).
+      {
+        command: "perl",
+        default: "ask",
+        argPatterns: [
+          { match: { anyArgMatches: ["^-[a-z]*i"] }, decision: "ask", reason: "Perl `-i` does in-place file edits. Save the script to scripts/*.pl and run it." },
+          ...inlineExecPatterns("Perl", ["^-[npa]*[eE]$"]),
+          VERSION_HELP_FLAGS
+        ]
+      },
       { command: "php", default: "ask", argPatterns: [...inlineExecPatterns("PHP", ["^-r$"]), VERSION_HELP_FLAGS] },
       // --- Java ecosystem ---
       { command: "java", default: "ask", argPatterns: [VERSION_HELP_FLAGS] },
@@ -20913,11 +20923,12 @@ function generateAllowSnippet(details) {
   }
   return lines.join("\n");
 }
-function formatSystemMessage(decision, rawCommand, details) {
+function formatSystemMessage(decision, rawCommand, details, fallbackReason) {
   const relevant = details.filter((d) => d.decision !== "allow");
   if (decision === "ask") {
     const parts = relevant.map((d) => `\`${d.command}\`: ${d.reason}`);
-    const header = `[warden] ${parts.join(" | ")}`;
+    const body = parts.length > 0 ? parts.join(" | ") : fallbackReason || "";
+    const header = `[warden] ${body}`;
     const subcommandHints = relevant.filter((d) => d.args.length > 0).map((d) => {
       const sub = d.args[0];
       return `  Option A: Allow all \`${d.command}\` \u2192 \`/warden:allow ${d.command}\`
@@ -21191,14 +21202,14 @@ function emitResult(result, label, config) {
       const truncated = label.length > 80 ? label.slice(0, 77) + "..." : label;
       sendNotification("Claude Warden", `Blocked: ${truncated}`, config);
     }
-    const msg2 = formatSystemMessage("deny", label, result.details);
+    const msg2 = formatSystemMessage("deny", label, result.details, result.reason);
     emitDecision("deny", msg2, `[warden] Blocked: ${result.reason}`);
   }
   if (config.notifyOnAsk) {
     const truncated = label.length > 80 ? label.slice(0, 77) + "..." : label;
     sendNotification("Claude Warden", `Permission needed: ${truncated}`, config);
   }
-  const msg = formatSystemMessage("ask", label, result.details);
+  const msg = formatSystemMessage("ask", label, result.details, result.reason);
   emitDecision("ask", msg);
 }
 main().catch(() => process.exit(0));

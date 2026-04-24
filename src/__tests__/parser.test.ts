@@ -148,9 +148,12 @@ describe('parseCommand', () => {
     expect(result.commands[1].command).toBe('echo');
   });
 
-  it('handles nested subshells', () => {
+  it('handles nested subshells — inner commands are extracted', () => {
     const result = parseCommand('(echo hello; (echo nested))');
-    expect(result.hasSubshell).toBe(true);
+    // Explicit (...) subshells have their contents walked into commands,
+    // so hasSubshell stays false — each command is evaluated normally.
+    expect(result.hasSubshell).toBe(false);
+    expect(result.commands.map(c => c.command)).toEqual(['echo', 'echo']);
   });
 
   it('detects command substitution in double quotes', () => {
@@ -275,7 +278,9 @@ describe('parseCommand', () => {
   it('does not affect actual subshell syntax', () => {
     const result = parseCommand('echo hello && (cd /tmp && ls)');
     expect(result.parseError).toBe(false);
-    expect(result.hasSubshell).toBe(true);
+    // Explicit (...) is walked through — inner commands are extracted.
+    expect(result.hasSubshell).toBe(false);
+    expect(result.commands.map(c => c.command)).toEqual(['echo', 'cd', 'ls']);
   });
 });
 

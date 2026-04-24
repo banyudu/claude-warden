@@ -152,7 +152,7 @@ function emitResult(result: EvalResult, label: string, config: WardenConfig): ne
       const truncated = label.length > 80 ? label.slice(0, 77) + '...' : label;
       sendNotification('Claude Warden', `Blocked: ${truncated}`, config);
     }
-    const msg = formatSystemMessage('deny', label, result.details);
+    const msg = formatSystemMessage('deny', label, result.details, result.reason);
     emitDecision('deny', msg, `[warden] Blocked: ${result.reason}`);
   }
 
@@ -161,7 +161,7 @@ function emitResult(result: EvalResult, label: string, config: WardenConfig): ne
     const truncated = label.length > 80 ? label.slice(0, 77) + '...' : label;
     sendNotification('Claude Warden', `Permission needed: ${truncated}`, config);
   }
-  const msg = formatSystemMessage('ask', label, result.details);
+  const msg = formatSystemMessage('ask', label, result.details, result.reason);
   emitDecision('ask', msg);
 }
 
