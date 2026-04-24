@@ -38,15 +38,12 @@ The hook communicates with Claude Code via the PreToolUse hook protocol:
 
 ## Releasing
 
-Releases are done remotely by creating a GitHub release (not by publishing locally). A CI workflow handles npm publishing via OIDC trusted publishing when a release is created.
+npm publish runs **locally** — CI only creates the GitHub tag + release. OIDC trusted publishing from CI kept failing with 404s on the registry PUT, so we dropped it.
 
-1. Merge PR to `main` (main is protected — no direct pushes; squash merges are disabled, use merge commits)
-2. `gh release create vX.Y.Z --target main --title "vX.Y.Z" --notes "..."`
-
-### Publish workflow gotchas
-
-- **npm CLI version matters**: the publish step must use `npx -y npm@11.5.1 publish --access public --provenance`. Trusted publisher OIDC exchange requires npm ≥ 11.5.1. `pnpm publish` and the default npm shipped with Node 20 both fail silently with `404 Not Found - PUT` (provenance signs fine via sigstore, but the actual registry PUT is unauthenticated). Don't try to self-upgrade npm with `npm install -g npm@latest` — it corrupts the runner install.
-- **Re-running publish after a workflow fix**: the `release: published` trigger runs the workflow file from the tag's commit, not HEAD of main. If you fix `publish.yml` and want it to take effect on an existing version, you must `gh release delete vX.Y.Z --yes --cleanup-tag` then recreate the release with `--target main`. Merging the fix to main alone is not enough.
+1. Bump version on a `release/vX.Y.Z` branch, update CHANGELOG.md, open PR.
+2. Merge PR to `main` with a merge commit (main is protected — no direct pushes, squash disabled). The commit message must start with `chore: release v<version>`.
+3. `auto-release.yml` picks up the release commit on main, tags it, and creates the GitHub release from the CHANGELOG entry.
+4. Locally: `git checkout vX.Y.Z && pnpm install --frozen-lockfile && npm publish --access public`. The `prepublishOnly` script syncs plugin version, builds, and tests before publishing.
 
 ## Plugin Structure
 
