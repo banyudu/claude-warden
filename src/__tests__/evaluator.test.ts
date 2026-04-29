@@ -227,6 +227,51 @@ describe('evaluator', () => {
     });
   });
 
+  describe('control constructs', () => {
+    it('allows for-loop when body commands are safe', () => {
+      expect(eval_('for f in a b c; do echo $f; done').decision).toBe('allow');
+    });
+
+    it('allows while-loop when clause and body are safe', () => {
+      expect(eval_('while true; do ls; done').decision).toBe('allow');
+    });
+
+    it('allows until-loop when clause and body are safe', () => {
+      expect(eval_('until false; do echo hi; done').decision).toBe('allow');
+    });
+
+    it('allows if/then/else when all branches are safe', () => {
+      expect(eval_('if [ -f x ]; then cat x; else echo missing; fi').decision).toBe('allow');
+    });
+
+    it('allows case statement when each clause body is safe', () => {
+      expect(eval_('case $x in a) echo a;; *) echo other;; esac').decision).toBe('allow');
+    });
+
+    it('allows function definition with safe body', () => {
+      expect(eval_('foo() { echo hi; ls; }').decision).toBe('allow');
+    });
+
+    it('denies for-loop containing a dangerous command', () => {
+      expect(eval_('for f in *.txt; do sudo rm "$f"; done').decision).toBe('deny');
+    });
+
+    it('asks for-loop containing an unknown command', () => {
+      expect(eval_('for f in a b; do unknown-sketchy-tool "$f"; done').decision).toBe('ask');
+    });
+
+    it('allows for-loop with safe command substitution in wordlist (issue #115 repro)', () => {
+      const result = eval_(
+        'for f in $(rg --files . -g \'*.test.ts\' | head -10); do echo "=== $f ==="; bun test "$f" | tail -3; done',
+      );
+      expect(result.decision).toBe('allow');
+    });
+
+    it('denies for-loop with dangerous command substitution in wordlist', () => {
+      expect(eval_('for f in $(sudo rm -rf /); do echo "$f"; done').decision).toBe('deny');
+    });
+  });
+
   describe('heredocs', () => {
     it('allows cat with heredoc (body is data, not code)', () => {
       expect(eval_('cat <<EOF\nhello world\nEOF').decision).toBe('allow');
