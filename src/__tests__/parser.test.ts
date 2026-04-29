@@ -156,6 +156,73 @@ describe('parseCommand', () => {
     expect(result.commands.map(c => c.command)).toEqual(['echo', 'echo']);
   });
 
+  describe('control constructs — body commands extracted', () => {
+    it('extracts body of for loop with literal wordlist', () => {
+      const result = parseCommand('for f in a b c; do echo $f; done');
+      expect(result.parseError).toBe(false);
+      expect(result.hasSubshell).toBe(false);
+      expect(result.commands.map(c => c.command)).toEqual(['echo']);
+    });
+
+    it('extracts clause and body of while loop', () => {
+      const result = parseCommand('while true; do echo hi; done');
+      expect(result.parseError).toBe(false);
+      expect(result.hasSubshell).toBe(false);
+      expect(result.commands.map(c => c.command)).toEqual(['true', 'echo']);
+    });
+
+    it('extracts clause and body of until loop', () => {
+      const result = parseCommand('until false; do echo hi; done');
+      expect(result.parseError).toBe(false);
+      expect(result.hasSubshell).toBe(false);
+      expect(result.commands.map(c => c.command)).toEqual(['false', 'echo']);
+    });
+
+    it('extracts if/then/else branches', () => {
+      const result = parseCommand('if true; then echo yes; else echo no; fi');
+      expect(result.parseError).toBe(false);
+      expect(result.hasSubshell).toBe(false);
+      expect(result.commands.map(c => c.command)).toEqual(['true', 'echo', 'echo']);
+    });
+
+    it('extracts elif chains via nested If in else', () => {
+      const result = parseCommand('if [ -f x ]; then echo a; elif [ -f y ]; then echo b; else echo c; fi');
+      expect(result.parseError).toBe(false);
+      expect(result.hasSubshell).toBe(false);
+      expect(result.commands.map(c => c.command)).toEqual(['[', 'echo', '[', 'echo', 'echo']);
+    });
+
+    it('extracts each clause body of case statement', () => {
+      const result = parseCommand('case $x in a) echo a;; b|c) echo bc;; *) echo other;; esac');
+      expect(result.parseError).toBe(false);
+      expect(result.hasSubshell).toBe(false);
+      expect(result.commands.map(c => c.command)).toEqual(['echo', 'echo', 'echo']);
+    });
+
+    it('extracts function body', () => {
+      const result = parseCommand('foo() { echo hi; ls; }');
+      expect(result.parseError).toBe(false);
+      expect(result.hasSubshell).toBe(false);
+      expect(result.commands.map(c => c.command)).toEqual(['echo', 'ls']);
+    });
+
+    it('captures command substitutions inside for-loop wordlist as subshellCommands', () => {
+      const result = parseCommand('for f in $(rg --files .); do echo "$f"; done');
+      expect(result.parseError).toBe(false);
+      expect(result.hasSubshell).toBe(true);
+      expect(result.subshellCommands).toEqual(['rg --files .']);
+      expect(result.commands.map(c => c.command)).toEqual(['echo']);
+    });
+
+    it('captures command substitutions inside case discriminant', () => {
+      const result = parseCommand('case $(uname) in Linux) echo lin;; *) echo other;; esac');
+      expect(result.parseError).toBe(false);
+      expect(result.hasSubshell).toBe(true);
+      expect(result.subshellCommands).toEqual(['uname']);
+      expect(result.commands.map(c => c.command)).toEqual(['echo', 'echo']);
+    });
+  });
+
   it('detects command substitution in double quotes', () => {
     const result = parseCommand('echo "today is $(date)"');
     expect(result.hasSubshell).toBe(true);

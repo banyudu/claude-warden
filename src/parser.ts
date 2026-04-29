@@ -42,9 +42,50 @@ interface LogicalExpressionNode extends AstNode {
   right: AstNode;
 }
 
+interface CompoundList {
+  type: 'CompoundList';
+  commands: AstNode[];
+}
+
 interface SubshellNode extends AstNode {
   type: 'Subshell';
-  list: { type: 'CompoundList'; commands: AstNode[] };
+  list: CompoundList;
+}
+
+interface ForNode extends AstNode {
+  type: 'For';
+  wordlist?: WordNode[];
+  do?: CompoundList;
+}
+
+interface WhileUntilNode extends AstNode {
+  type: 'While' | 'Until';
+  clause?: CompoundList;
+  do?: CompoundList;
+}
+
+interface IfNode extends AstNode {
+  type: 'If';
+  clause?: CompoundList;
+  then?: CompoundList;
+  else?: CompoundList | IfNode;
+}
+
+interface CaseItemNode {
+  type: 'CaseItem';
+  pattern?: WordNode[];
+  body?: CompoundList;
+}
+
+interface CaseNode extends AstNode {
+  type: 'Case';
+  clause?: WordNode;
+  cases?: CaseItemNode[];
+}
+
+interface FunctionNode extends AstNode {
+  type: 'Function';
+  body?: CompoundList;
 }
 
 interface ScriptNode extends AstNode {
@@ -170,6 +211,21 @@ function convertCommand(node: CommandNode): ParsedCommand | null {
   return { command, originalCommand, args, envPrefixes, raw };
 }
 
+function collectExpansionsFromWord(word: WordNode | undefined, result: WalkResult): void {
+  if (!word?.expansion) return;
+  for (const exp of word.expansion) {
+    if (exp.type === 'CommandExpansion' && exp.command) {
+      result.hasSubshell = true;
+      result.subshellCommands.push(exp.command);
+    }
+  }
+}
+
+function walkCompoundList(list: CompoundList | undefined, result: WalkResult): void {
+  if (!list?.commands) return;
+  for (const cmd of list.commands) walkNode(cmd, result);
+}
+
 function collectCommandExpansions(node: AstNode): string[] {
   const commands: string[] = [];
 
@@ -264,15 +320,51 @@ function walkNode(node: AstNode, result: WalkResult): void {
       break;
     }
 
-    // Complex constructs — flag as subshell for safety
-    case 'If':
-    case 'For':
-    case 'While':
-    case 'Until':
-    case 'Case':
-    case 'Function':
-      result.hasSubshell = true;
+    // Control constructs mirror the Subshell handler above: their bodies are
+    // walked into result.commands so each inner command is evaluated normally.
+    // hasSubshell stays false unless a head expression (`for f in $(...)`,
+    // `case $(...) in ...`) introduces a real command substitution.
+    case 'For': {
+      const f = node as ForNode;
+      if (f.wordlist) {
+        for (const w of f.wordlist) collectExpansionsFromWord(w, result);
+      }
+      walkCompoundList(f.do, result);
       break;
+    }
+
+    case 'While':
+    case 'Until': {
+      const w = node as WhileUntilNode;
+      walkCompoundList(w.clause, result);
+      walkCompoundList(w.do, result);
+      break;
+    }
+
+    case 'If': {
+      const i = node as IfNode;
+      walkCompoundList(i.clause, result);
+      walkCompoundList(i.then, result);
+      if (i.else) {
+        if (i.else.type === 'If') walkNode(i.else, result);
+        else walkCompoundList(i.else, result);
+      }
+      break;
+    }
+
+    case 'Case': {
+      const cs = node as CaseNode;
+      collectExpansionsFromWord(cs.clause, result);
+      if (cs.cases) {
+        for (const item of cs.cases) walkCompoundList(item.body, result);
+      }
+      break;
+    }
+
+    case 'Function': {
+      walkCompoundList((node as FunctionNode).body, result);
+      break;
+    }
 
     default:
       break;

@@ -18218,6 +18218,15 @@ function convertCommand(node) {
   const raw = rawParts.join(" ");
   return { command, originalCommand, args: args2, envPrefixes, raw };
 }
+function collectExpansionsFromWord(word, result) {
+  if (!word?.expansion) return;
+  for (const exp of word.expansion) {
+    if (exp.type === "CommandExpansion" && exp.command) {
+      result.hasSubshell = true;
+      result.subshellCommands.push(exp.command);
+    }
+  }
+}
 function collectCommandExpansions(node) {
   const commands = [];
   if (node.type === "Command") {
@@ -18292,15 +18301,70 @@ function walkNode(node, result) {
       }
       break;
     }
-    // Complex constructs — flag as subshell for safety
-    case "If":
-    case "For":
-    case "While":
-    case "Until":
-    case "Case":
-    case "Function":
-      result.hasSubshell = true;
+    // Control constructs: walk inner commands so each is evaluated normally.
+    // Like explicit (...) subshells, we don't set hasSubshell — the body is
+    // fully extracted into result.commands. Command substitutions inside the
+    // head expression (e.g. `for f in $(...)`) still flow into subshellCommands.
+    case "For": {
+      const f = node;
+      if (f.wordlist) {
+        for (const w of f.wordlist) collectExpansionsFromWord(w, result);
+      }
+      if (f.do?.commands) {
+        for (const cmd of f.do.commands) walkNode(cmd, result);
+      }
       break;
+    }
+    case "While":
+    case "Until": {
+      const w = node;
+      if (w.clause?.commands) {
+        for (const cmd of w.clause.commands) walkNode(cmd, result);
+      }
+      if (w.do?.commands) {
+        for (const cmd of w.do.commands) walkNode(cmd, result);
+      }
+      break;
+    }
+    case "If": {
+      const i = node;
+      if (i.clause?.commands) {
+        for (const cmd of i.clause.commands) walkNode(cmd, result);
+      }
+      if (i.then?.commands) {
+        for (const cmd of i.then.commands) walkNode(cmd, result);
+      }
+      if (i.else) {
+        if (i.else.type === "If") {
+          walkNode(i.else, result);
+        } else {
+          const elseList = i.else;
+          if (elseList.commands) {
+            for (const cmd of elseList.commands) walkNode(cmd, result);
+          }
+        }
+      }
+      break;
+    }
+    case "Case": {
+      const cs = node;
+      collectExpansionsFromWord(cs.clause, result);
+      if (cs.cases) {
+        for (const item of cs.cases) {
+          if (item.body?.commands) {
+            for (const cmd of item.body.commands) walkNode(cmd, result);
+          }
+        }
+      }
+      break;
+    }
+    case "Function": {
+      const fn2 = node;
+      if (fn2.body?.commands) {
+        for (const cmd of fn2.body.commands) walkNode(cmd, result);
+      }
+      break;
+    }
     default:
       break;
   }
