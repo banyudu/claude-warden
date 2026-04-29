@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.10.1] - 2026-04-29
+
+### Bug Fixes
+- fix(parser): recurse into for/while/if/case/function bodies (478829c)
+
+### Other Changes
+- chore(ci): switch to local npm publish (d09cf27)
+
 ## [2.10.0] - 2026-04-24
 
 ### Features

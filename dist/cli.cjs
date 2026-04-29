@@ -18223,6 +18223,10 @@ function collectExpansionsFromWord(word, result) {
     }
   }
 }
+function walkCompoundList(list, result) {
+  if (!list?.commands) return;
+  for (const cmd of list.commands) walkNode(cmd, result);
+}
 function collectCommandExpansions(node) {
   const commands = [];
   if (node.type === "Command") {
@@ -18297,48 +18301,32 @@ function walkNode(node, result) {
       }
       break;
     }
-    // Control constructs: walk inner commands so each is evaluated normally.
-    // Like explicit (...) subshells, we don't set hasSubshell — the body is
-    // fully extracted into result.commands. Command substitutions inside the
-    // head expression (e.g. `for f in $(...)`) still flow into subshellCommands.
+    // Control constructs mirror the Subshell handler above: their bodies are
+    // walked into result.commands so each inner command is evaluated normally.
+    // hasSubshell stays false unless a head expression (`for f in $(...)`,
+    // `case $(...) in ...`) introduces a real command substitution.
     case "For": {
       const f = node;
       if (f.wordlist) {
         for (const w of f.wordlist) collectExpansionsFromWord(w, result);
       }
-      if (f.do?.commands) {
-        for (const cmd of f.do.commands) walkNode(cmd, result);
-      }
+      walkCompoundList(f.do, result);
       break;
     }
     case "While":
     case "Until": {
       const w = node;
-      if (w.clause?.commands) {
-        for (const cmd of w.clause.commands) walkNode(cmd, result);
-      }
-      if (w.do?.commands) {
-        for (const cmd of w.do.commands) walkNode(cmd, result);
-      }
+      walkCompoundList(w.clause, result);
+      walkCompoundList(w.do, result);
       break;
     }
     case "If": {
       const i = node;
-      if (i.clause?.commands) {
-        for (const cmd of i.clause.commands) walkNode(cmd, result);
-      }
-      if (i.then?.commands) {
-        for (const cmd of i.then.commands) walkNode(cmd, result);
-      }
+      walkCompoundList(i.clause, result);
+      walkCompoundList(i.then, result);
       if (i.else) {
-        if (i.else.type === "If") {
-          walkNode(i.else, result);
-        } else {
-          const elseList = i.else;
-          if (elseList.commands) {
-            for (const cmd of elseList.commands) walkNode(cmd, result);
-          }
-        }
+        if (i.else.type === "If") walkNode(i.else, result);
+        else walkCompoundList(i.else, result);
       }
       break;
     }
@@ -18346,19 +18334,12 @@ function walkNode(node, result) {
       const cs = node;
       collectExpansionsFromWord(cs.clause, result);
       if (cs.cases) {
-        for (const item of cs.cases) {
-          if (item.body?.commands) {
-            for (const cmd of item.body.commands) walkNode(cmd, result);
-          }
-        }
+        for (const item of cs.cases) walkCompoundList(item.body, result);
       }
       break;
     }
     case "Function": {
-      const fn2 = node;
-      if (fn2.body?.commands) {
-        for (const cmd of fn2.body.commands) walkNode(cmd, result);
-      }
+      walkCompoundList(node.body, result);
       break;
     }
     default:
