@@ -14,6 +14,20 @@ import type { HookInput, HookOutput, EvalResult, WardenConfig, Decision } from '
 
 const MAX_STDIN_SIZE = 1024 * 1024; // 1MB
 
+function isCodexPreToolUse(input: HookInput): boolean {
+  const maybeCodex = input as HookInput & {
+    model?: unknown;
+    turn_id?: unknown;
+    tool_use_id?: unknown;
+  };
+  return (
+    input.hook_event_name === 'PreToolUse'
+    && typeof maybeCodex.model === 'string'
+    && typeof maybeCodex.turn_id === 'string'
+    && typeof maybeCodex.tool_use_id === 'string'
+  );
+}
+
 function emitDecision(decision: Decision, reason: string, stderrMessage?: string): never {
   const output: HookOutput = {
     hookSpecificOutput: {
@@ -139,10 +153,15 @@ async function main() {
   const result = wardenEvalWithConfig(command, config, input.cwd);
 
   handleYoloMode(input.session_id, result);
-  emitResult(result, command, config);
+  emitResult(result, command, config, isCodexPreToolUse(input));
 }
 
-function emitResult(result: EvalResult, label: string, config: WardenConfig): never {
+function emitResult(
+  result: EvalResult,
+  label: string,
+  config: WardenConfig,
+  codexPreToolUse = false,
+): never {
   if (result.decision === 'allow') {
     emitDecision('allow', `[warden] ${result.reason}`);
   }
@@ -162,6 +181,9 @@ function emitResult(result: EvalResult, label: string, config: WardenConfig): ne
     sendNotification('Claude Warden', `Permission needed: ${truncated}`, config);
   }
   const msg = formatSystemMessage('ask', label, result.details, result.reason);
+  if (codexPreToolUse) {
+    emitDecision('deny', msg, `[warden] Permission required: ${result.reason}`);
+  }
   emitDecision('ask', msg);
 }
 
