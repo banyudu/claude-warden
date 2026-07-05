@@ -77,6 +77,18 @@ describe('Codex PreToolUse hook compatibility', () => {
     expect(stderr).toContain('[warden] Blocked');
   });
 
+  it('maps ask-level Warden decisions to deny because Codex cannot service interactive asks', () => {
+    const { stdout, stderr, exitCode } = runHook({
+      tool_name: 'Bash',
+      tool_input: { command: 'rm -rf /tmp/warden-codex-test' },
+    });
+    expect(exitCode).toBe(2);
+    const output = parseOutput(stdout);
+    expect(output.hookSpecificOutput.permissionDecision).toBe('deny');
+    expect(output.hookSpecificOutput.permissionDecisionReason).toContain('/warden:allow');
+    expect(stderr).toContain('[warden] Permission required');
+  });
+
   it('ignores non-Bash tool_name values', () => {
     const { stdout, exitCode } = runHook({
       tool_name: 'Write',

@@ -147,7 +147,7 @@ Codex sends the same `{tool_name, tool_input.command, cwd, session_id, ...}` pay
 
 - **Bash only** — Codex PreToolUse currently intercepts only shell commands; MCP, Write, and WebSearch tools are not hooked.
 - **Work in progress upstream** — Codex's hook system may miss some shell invocations. Treat it as defense-in-depth, not a hard sandbox.
-- **`deny` is authoritative; `allow`/`ask` fail open** — Codex currently honors `deny` (and exit code 2) but treats `allow`/`ask` as "fail open" (command proceeds). This is safe: Warden's deny list still blocks dangerous commands.
+- **Codex cannot service interactive `ask` prompts** — Warden maps `ask` decisions to `deny` for Codex PreToolUse payloads while preserving the normal `/warden:allow` guidance in the message. This avoids fail-open execution for commands that Warden wanted reviewed.
 - **No undo** — hooks cannot revert a command that has already executed.
 
 ### Fallback: static rule export
