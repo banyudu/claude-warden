@@ -51,7 +51,7 @@ export function evaluate(parsed: ParseResult, config: WardenConfig, cwdOrDepth?:
     return { decision: 'ask', reason: 'Could not parse command safely', details: [] };
   }
 
-  if (parsed.commands.length === 0) {
+  if (parsed.commands.length === 0 && !parsed.hasSubshell) {
     return { decision: 'allow', reason: 'Empty command', details: [] };
   }
 
